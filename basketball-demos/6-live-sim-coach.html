@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Košarka — Coach simulator</title>
+<style>
+  :root { color-scheme: dark; --home:#ff7a45; --away:#45a6ff; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; min-height:100vh; padding:18px; display:flex; flex-direction:column; align-items:center; gap:14px;
+    background: radial-gradient(circle at 50% -10%, #221a3a, #0a0713); color:#efe9ff;
+    font-family:"Segoe UI",system-ui,sans-serif;
+  }
+  h1 { font-size:19px; margin:0; font-weight:600; }
+  .sub { font-size:13px; color:#a99cc8; margin:-6px 0 0; }
+  .wrap { width:960px; max-width:100%; display:flex; flex-direction:column; gap:14px; }
+
+  .score {
+    display:grid; grid-template-columns:1fr auto 1fr; align-items:center;
+    background:linear-gradient(#191233,#0f0a22); border:1px solid #302852; border-radius:14px; padding:12px 24px;
+  }
+  .tm { display:flex; align-items:center; gap:12px; } .tm.r{ justify-content:flex-end; }
+  .badge{ width:34px; height:34px; border-radius:9px; }
+  .tm.h .badge{ background:linear-gradient(135deg,#ffa05a,var(--home)); }
+  .tm.a .badge{ background:linear-gradient(135deg,#6bb6ff,var(--away)); }
+  .nm{ font-weight:700; } .yours{ font-size:10px; color:#ffd24a; letter-spacing:1px; }
+  .big{ font-size:40px; font-weight:800; font-variant-numeric:tabular-nums; }
+  .mid{ text-align:center; } .clk{ font-size:22px; font-weight:700; } .qt{ font-size:11px; letter-spacing:2px; color:#9a8ec0; }
+
+  .grid{ display:grid; grid-template-columns:1fr 320px; gap:14px; }
+  @media (max-width:840px){ .grid{ grid-template-columns:1fr; } }
+  .card{ background:#120d26; border:1px solid #2a2148; border-radius:12px; padding:14px 16px; }
+  .card h3{ margin:0 0 12px; font-size:11px; letter-spacing:2px; color:#9a8ec0; }
+
+  /* taktika */
+  .tactic{ margin-bottom:16px; }
+  .tactic label{ display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px; }
+  .tactic label b{ color:#ffd24a; }
+  input[type=range]{ width:100%; accent-color:var(--home); }
+  .seg{ display:flex; gap:6px; }
+  .seg button{ flex:1; background:#1c1638; color:#cfc4ec; border:1px solid #2f2652; border-radius:8px; padding:7px; font-size:12px; cursor:pointer; }
+  .seg button.active{ background:var(--home); color:#180f00; border-color:var(--home); font-weight:700; }
+  .hint{ font-size:11px; color:#8a7eb0; margin-top:8px; line-height:1.4; }
+
+  .feed{ max-height:300px; overflow-y:auto; }
+  .ev{ font-size:12.5px; padding:5px 0; border-bottom:1px solid #1e1838; line-height:1.4; }
+  .ev .tt{ color:#7a6ea0; font-size:11px; }
+  .ev.big{ background:#1c1638; margin:0 -8px; padding:5px 8px; border-radius:6px; border:none; }
+  .ev .h{ color:var(--home); font-weight:600; } .ev .a{ color:var(--away); font-weight:600; }
+  .ev .sc{ color:#ffd24a; font-weight:700; }
+
+  .statline{ display:flex; justify-content:space-between; font-size:12px; padding:5px 0; border-bottom:1px solid #1e1838; }
+  .statline .lbl{ color:#9a8ec0; }
+  .statline .hv{ color:#ffb08a; font-weight:600; width:44px; text-align:left; }
+  .statline .av{ color:#8ac6ff; font-weight:600; width:44px; text-align:right; }
+
+  .controls{ display:flex; gap:8px; justify-content:center; flex-wrap:wrap; }
+  button.ctrl{ background:#241a48; color:#efe9ff; border:none; border-radius:8px; padding:9px 18px; font-size:14px; cursor:pointer; }
+  button.ctrl:hover{ background:#2f2358; }
+  button.ctrl.primary{ background:#6a3fc0; } button.ctrl.primary:hover{ background:#7a4fd0; }
+  .spd button.active{ background:#4a3a7a; }
+
+  .winbar{ height:12px; border-radius:6px; background:#1c1638; overflow:hidden; display:flex; margin-top:4px; }
+  .winbar i{ background:var(--home); transition:width .5s; }
+  .winbar .a{ background:var(--away); }
+  .winlbl{ display:flex; justify-content:space-between; font-size:11px; color:#9a8ec0; margin-top:5px; }
+</style>
+</head>
+<body>
+  <h1>🎯 Coach simulator</h1>
+  <p class="sub">Ti vodiš <b style="color:var(--home)">VUKOVE</b> — mijenjaj taktiku uživo i utječi na ishod</p>
+
+  <div class="wrap">
+    <div class="score">
+      <div class="tm h">
+        <div class="badge"></div>
+        <div><div class="nm">VUKOVI</div><div class="yours">◄ TVOJA EKIPA</div></div>
+        <div class="big" id="ph">0</div>
+      </div>
+      <div class="mid"><div class="clk" id="clk">10:00</div><div class="qt" id="qt">ČETVRTINA 1</div></div>
+      <div class="tm a r">
+        <div class="big" id="pa">0</div>
+        <div style="text-align:right"><div class="nm">MEDVJEDI</div><div class="yours" style="color:#7a6ea0">CPU</div></div>
+        <div class="badge"></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div class="card">
+          <h3>TVOJA TAKTIKA</h3>
+          <div class="tactic">
+            <label>Tempo igre <b id="paceV">Normalan</b></label>
+            <input type="range" id="pace" min="0" max="2" step="1" value="1">
+          </div>
+          <div class="tactic">
+            <label>Fokus napada</label>
+            <div class="seg" id="focus">
+              <button data-f="inside" class="active">Pod košem</button>
+              <button data-f="balanced">Uravnoteženo</button>
+              <button data-f="three">Trice</button>
+            </div>
+          </div>
+          <div class="tactic">
+            <label>Agresivnost obrane <b id="defV">Srednja</b></label>
+            <input type="range" id="def" min="0" max="2" step="1" value="1">
+          </div>
+          <div class="hint" id="hint">Pod košem: veći postotak, ali više faulova. Presing obrana krade lopte, no riskira faul.</div>
+        </div>
+
+        <div class="card">
+          <h3>PROCJENA POBJEDE</h3>
+          <div class="winbar"><i id="winH" style="width:50%"></i><i class="a" id="winA" style="width:50%"></i></div>
+          <div class="winlbl"><span>VUKOVI <b id="winHp">50%</b></span><span><b id="winAp">50%</b> MEDVJEDI</span></div>
+        </div>
+
+        <div class="card">
+          <h3>STATISTIKA</h3>
+          <div id="stats"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>TIJEK UTAKMICE</h3>
+        <div class="feed" id="feed"></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl primary" id="play">▶ Pokreni</button>
+      <button class="ctrl" id="pause">⏸ Pauza</button>
+      <div class="spd" style="display:flex;gap:4px">
+        <button class="ctrl" data-s="1">1×</button>
+        <button class="ctrl active" data-s="3">3×</button>
+        <button class="ctrl" data-s="6">6×</button>
+      </div>
+      <button class="ctrl" id="restart">↺ Nova</button>
+    </div>
+  </div>
+
+<script>
+const T = {
+  home:{ name:'VUKOVI', pts:0, fga:0, fgm:0, tpm:0, reb:0, ast:0, to:0, foul:0 },
+  away:{ name:'MEDVJEDI', pts:0, fga:0, fgm:0, tpm:0, reb:0, ast:0, to:0, foul:0 },
+};
+// taktika igrača
+const tac = { pace:1, focus:'inside', def:1 };
+
+let quarter, clock, attacking, running=false, over=false, speed=3;
+
+const PACE_TXT=['Spor','Normalan','Brz'], DEF_TXT=['Pasivna','Srednja','Presing'];
+const FOCUS_HINT={
+  inside:'Pod košem: veći postotak (2 poena), ali protivnik lakše faulira. Manje trica.',
+  balanced:'Uravnoteženo: miks šuteva izbliza i izdaleka, stabilan pristup.',
+  three:'Trice: veći rizik/nagrada. Niži postotak, ali 3 poena mijenjaju utakmicu.'
+};
+
+function reset(){
+  [T.home,T.away].forEach(t=>Object.assign(t,{pts:0,fga:0,fgm:0,tpm:0,reb:0,ast:0,to:0,foul:0}));
+  quarter=1; clock=600; attacking=Math.random()>.5?'home':'away'; over=false;
+  document.getElementById('feed').innerHTML='';
+  render();
+  addFeed('Sudac baca loptu — VUKOVI protiv MEDVJEDA! 🐺🐻','',true);
+}
+
+// vjerojatnosti ovisno o taktici (samo za domaće; CPU ima svoju logiku)
+function homeShotProfile(){
+  let threeRate, madeIn, madeThree, foulRisk, toRisk;
+  if(tac.focus==='inside'){ threeRate=0.22; madeIn=0.58; madeThree=0.34; foulRisk=0.14; }
+  else if(tac.focus==='three'){ threeRate=0.62; madeIn=0.5; madeThree=0.37; foulRisk=0.07; }
+  else { threeRate=0.4; madeIn=0.53; madeThree=0.355; foulRisk=0.10; }
+  // tempo: brzi = više posjeda ali malo lošiji izbor
+  const tempoPen = [0.02,0,-0.015][tac.pace];
+  madeIn+=tempoPen; madeThree+=tempoPen;
+  // obrana igrača ne utječe na napad, već na CPU (vidi cpuTurnover)
+  return {threeRate, madeIn, madeThree, foulRisk};
+}
+
+function homePossession(){
+  const off=T.home, prof=homeShotProfile();
+  if(Math.random() < 0.09){ off.to++; addFeed('VUKOVI gube loptu','home'); attacking='away'; return; }
+  const three = Math.random()<prof.threeRate;
+  off.fga++;
+  // faul u napadu = slobodna bacanja
+  if(Math.random()<prof.foulRisk){
+    T.away.foul++;
+    const ft = (Math.random()<0.75?1:0)+(Math.random()<0.75?1:0);
+    off.pts+=ft;
+    addFeed(`Faul nad VUKOVIMA — ${ft}/2 sl. bacanja (+${ft})`,'home', ft===2, `${T.home.pts}-${T.away.pts}`);
+    attacking='away'; render(); return;
+  }
+  const made = Math.random() < (three?prof.madeThree:prof.madeIn);
+  if(made){
+    const pts=three?3:2; off.fgm++; if(three)off.tpm++; off.pts+=pts;
+    if(Math.random()>0.42) off.ast++;
+    addFeed(`${three?'TRICA VUKOVA! 💥':'Koš VUKOVA'} (+${pts})`,'home', three, `${T.home.pts}-${T.away.pts}`);
+  } else {
+    const rt=Math.random()>0.68?'home':'away'; T[rt].reb++;
+    addFeed(`VUKOVI promašuju ${three?'tricu':''} — skok ${T[rt].name}`, rt);
+  }
+  attacking='away';
+}
+
+function cpuPossession(){
+  const off=T.away;
+  // presing obrana igrača krade lopte, ali faula više
+  const stealBonus=[0,0.03,0.075][tac.def];
+  const foulBonus=[0,0.02,0.06][tac.def];
+  if(Math.random() < 0.08+stealBonus){
+    off.to++; addFeed(`Ukradena lopta! ${tac.def===2?'Presing radi!':''} VUKOVI preuzimaju`,'home');
+    attacking='home'; return;
+  }
+  if(Math.random() < 0.09+foulBonus){
+    T.home.foul++;
+    const ft=(Math.random()<0.76?1:0)+(Math.random()<0.76?1:0);
+    off.pts+=ft;
+    addFeed(`Faul VUKOVA — MEDVJEDI idu na liniju, ${ft}/2 (+${ft})`,'away', false, `${T.home.pts}-${T.away.pts}`);
+    attacking='home'; render(); return;
+  }
+  const three=Math.random()<0.42; off.fga++;
+  const made=Math.random() < (three?0.355:0.53);
+  if(made){
+    const pts=three?3:2; off.fgm++; if(three)off.tpm++; off.pts+=pts;
+    if(Math.random()>0.42) off.ast++;
+    addFeed(`${three?'Trica MEDVJEDA':'Koš MEDVJEDA'} (+${pts})`,'away', three, `${T.home.pts}-${T.away.pts}`);
+  } else {
+    const rt=Math.random()>0.68?'away':'home'; T[rt].reb++;
+    addFeed(`MEDVJEDI promašuju — skok ${T[rt].name}`, rt);
+  }
+  attacking='home';
+}
+
+function addFeed(text, side, big, score){
+  const feed=document.getElementById('feed');
+  const div=document.createElement('div'); div.className='ev'+(big?' big':'');
+  const m=Math.floor(clock/60),s=Math.floor(clock%60);
+  const cls=side==='home'?'h':side==='away'?'a':'';
+  div.innerHTML=`<span class="tt">Q${quarter} ${m}:${String(s).padStart(2,'0')}</span> `+
+    `<span class="${cls}">${text}</span>${score?` <span class="sc">${score}</span>`:''}`;
+  feed.insertBefore(div,feed.firstChild);
+}
+
+const STATS=[['fgm','KOŠEVI'],['tpm','TRICE'],['reb','SKOKOVI'],['ast','ASIST.'],['to','IZG. LOPTE'],['foul','FAULOVI']];
+function winProb(){
+  // jednostavan model: razlika u poenima + preostalo vrijeme
+  const diff=T.home.pts-T.away.pts;
+  const totalLeft=(4-quarter)*600+clock;
+  const scale=Math.max(0.6, totalLeft/2400);
+  const p=1/(1+Math.exp(-diff/(6*scale)));
+  return Math.round(p*100);
+}
+function render(){
+  document.getElementById('ph').textContent=T.home.pts;
+  document.getElementById('pa').textContent=T.away.pts;
+  const m=Math.floor(clock/60),s=Math.floor(clock%60);
+  document.getElementById('clk').textContent=`${m}:${String(s).padStart(2,'0')}`;
+  document.getElementById('qt').textContent=over?'ZAVRŠENO':`ČETVRTINA ${quarter}`;
+  const wp=over?(T.home.pts>=T.away.pts?100:0):winProb();
+  document.getElementById('winH').style.width=wp+'%';
+  document.getElementById('winA').style.width=(100-wp)+'%';
+  document.getElementById('winHp').textContent=wp+'%';
+  document.getElementById('winAp').textContent=(100-wp)+'%';
+  document.getElementById('stats').innerHTML=STATS.map(([k,l])=>
+    `<div class="statline"><span class="hv">${T.home[k]}</span><span class="lbl">${l}</span><span class="av">${T.away[k]}</span></div>`
+  ).join('');
+}
+
+let last=performance.now(), acc=0;
+function loop(now){
+  const dt=(now-last)/1000; last=now;
+  if(running && !over){
+    const paceMul=[0.75,1,1.35][tac.pace];
+    clock -= dt*speed*2.2*paceMul;
+    acc += dt*speed*paceMul;
+    if(acc>0.7){ acc=0;
+      if(attacking==='home') homePossession(); else cpuPossession();
+      render();
+    }
+    if(clock<=0){
+      clock=600;
+      if(quarter>=4){
+        over=true; running=false;
+        const w=T.home.pts>T.away.pts?'POBIJEDIO SI! 🏆':T.away.pts>T.home.pts?'Izgubio si…':'Neriješeno';
+        addFeed(`KRAJ — ${w} (${T.home.pts}-${T.away.pts})`,'',true,`${T.home.pts}-${T.away.pts}`);
+      } else { quarter++; addFeed(`Kraj ${quarter-1}. četvrtine — prilagodi taktiku!`,''); }
+      render();
+    } else {
+      const m=Math.floor(clock/60),s=Math.floor(clock%60);
+      document.getElementById('clk').textContent=`${m}:${String(s).padStart(2,'0')}`;
+    }
+  }
+  requestAnimationFrame(loop);
+}
+
+// kontrole taktike
+document.getElementById('pace').oninput=e=>{ tac.pace=+e.target.value; document.getElementById('paceV').textContent=PACE_TXT[tac.pace]; };
+document.getElementById('def').oninput=e=>{ tac.def=+e.target.value; document.getElementById('defV').textContent=DEF_TXT[tac.def]; };
+document.getElementById('focus').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  tac.focus=b.dataset.f;
+  document.querySelectorAll('#focus button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  document.getElementById('hint').textContent=FOCUS_HINT[tac.focus];
+});
+
+document.getElementById('play').onclick=()=>{ if(over) reset(); running=true; };
+document.getElementById('pause').onclick=()=>running=false;
+document.getElementById('restart').onclick=()=>{ reset(); running=true; };
+document.querySelectorAll('.spd button').forEach(b=>b.onclick=()=>{
+  speed=+b.dataset.s;
+  document.querySelectorAll('.spd button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+});
+
+reset();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Košarka — Live simulator utakmice</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    gap: 14px; padding: 18px;
+    background: radial-gradient(circle at 50% 0%, #1b2735, #080a10);
+    font-family: "Segoe UI", system-ui, sans-serif; color: #e8eef5;
+  }
+  h1 { font-size: 19px; margin: 4px 0; font-weight: 600; }
+  .scoreboard {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px;
+    background: #10151d; border: 1px solid #263141; border-radius: 14px;
+    padding: 12px 26px; width: 920px; max-width: 100%; font-variant-numeric: tabular-nums;
+  }
+  .team-side { display: flex; align-items: center; gap: 12px; }
+  .team-side.away { justify-content: flex-end; }
+  .badge { width: 30px; height: 30px; border-radius: 8px; }
+  .home .badge { background: linear-gradient(135deg,#ff8a5a,#e2431f); }
+  .away .badge { background: linear-gradient(135deg,#5ab0ff,#1f6fe2); }
+  .tname { font-weight: 700; font-size: 16px; }
+  .pts { font-size: 40px; font-weight: 800; }
+  .center-col { text-align: center; }
+  .clock { font-size: 22px; font-weight: 700; letter-spacing: 1px; }
+  .qtr { font-size: 12px; color: #8090a2; letter-spacing: 2px; margin-top: 2px; }
+  .bonus { font-size: 11px; color: #ffcf4a; height: 14px; }
+
+  .layout { display: flex; gap: 14px; width: 920px; max-width: 100%; align-items: stretch; flex-wrap: wrap; }
+  canvas { border-radius: 12px; box-shadow: 0 16px 40px rgba(0,0,0,.5); background:#b0702f; flex: 1 1 520px; max-width: 100%; height:auto; }
+  .feed {
+    flex: 1 1 300px; background: #0d1219; border: 1px solid #212c3a; border-radius: 12px;
+    padding: 10px 12px; display: flex; flex-direction: column; min-width: 260px;
+  }
+  .feed h3 { margin: 2px 0 8px; font-size: 12px; letter-spacing: 2px; color: #7f8ea1; }
+  .log { flex: 1; overflow-y: auto; font-size: 13px; line-height: 1.5; max-height: 460px; }
+  .log .ev { padding: 3px 0; border-bottom: 1px solid #17202b; display: flex; gap: 8px; }
+  .log .t { color: #62718a; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .log .score { color: #ffd24a; font-weight: 700; }
+  .log .h { color: #ff8a5a; } .log .a { color: #5ab0ff; }
+
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  button {
+    background: #26303f; color: #e8eef5; border: none; border-radius: 8px; padding: 8px 16px;
+    font-size: 14px; cursor: pointer; transition: background .15s;
+  }
+  button:hover { background: #34405280; background:#344052; }
+  button.primary { background: #2f7d4f; } button.primary:hover { background:#379059; }
+  .speed { display: flex; gap: 4px; }
+  .speed button.active { background: #4a5c72; }
+
+  .stats { width: 920px; max-width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .statcard { background:#0d1219; border:1px solid #212c3a; border-radius:12px; padding:10px 14px; }
+  .statcard h4 { margin:0 0 8px; font-size:12px; letter-spacing:1px; }
+  table { width:100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 3px 6px; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { color:#7f8ea1; border-bottom:1px solid #212c3a; font-weight:600; }
+  tbody tr:hover { background:#141d28; }
+  .final { color:#ffd24a; font-weight:700; }
+</style>
+</head>
+<body>
+  <h1>🏀 Live simulator — cijela utakmica</h1>
+
+  <div class="scoreboard">
+    <div class="team-side home">
+      <div class="badge"></div>
+      <div><div class="tname" id="hn">SOKOLOVI</div><div class="bonus" id="hb"></div></div>
+      <div class="pts" id="hp">0</div>
+    </div>
+    <div class="center-col">
+      <div class="clock" id="clock">10:00</div>
+      <div class="qtr" id="qtr">ČETVRTINA 1</div>
+    </div>
+    <div class="team-side away">
+      <div class="pts" id="ap">0</div>
+      <div style="text-align:right"><div class="tname" id="an">RISOVI</div><div class="bonus" id="ab"></div></div>
+      <div class="badge"></div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <canvas id="court" width="560" height="360"></canvas>
+    <div class="feed">
+      <h3>TIJEK UTAKMICE</h3>
+      <div class="log" id="log"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="primary" id="play">▶ Pokreni</button>
+    <button id="pause">⏸ Pauza</button>
+    <div class="speed">
+      <button data-s="1">1×</button>
+      <button data-s="2" class="active">2×</button>
+      <button data-s="4">4×</button>
+      <button data-s="8">8×</button>
+    </div>
+    <button id="restart">↺ Nova utakmica</button>
+  </div>
+
+  <div class="stats">
+    <div class="statcard">
+      <h4 id="th-home">SOKOLOVI</h4>
+      <table><thead><tr><th>Igrač</th><th>PTS</th><th>SK</th><th>AS</th><th>ŠUT</th></tr></thead>
+      <tbody id="tb-home"></tbody></table>
+    </div>
+    <div class="statcard">
+      <h4 id="th-away">RISOVI</h4>
+      <table><thead><tr><th>Igrač</th><th>PTS</th><th>SK</th><th>AS</th><th>ŠUT</th></tr></thead>
+      <tbody id="tb-away"></tbody></table>
+    </div>
+  </div>
+
+<script>
+const cv = document.getElementById('court'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+
+const NAMES = ['Perić','Marić','Jurić','Kovač','Babić','Horvat','Novak','Vidić','Tomić','Šarić','Bogdan','Radić'];
+function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[a[i],a[j]]=[a[j],a[i]];} return a; }
+
+// deterministički-ish RNG samo za raspored, ostalo Math.random
+let rng = Math.random;
+
+const teams = {
+  home: { name:'SOKOLOVI', color:'#ff8a5a', pts:0, fouls:0, players:[] },
+  away: { name:'RISOVI',   color:'#5ab0ff', pts:0, fouls:0, players:[] },
+};
+
+function initPlayers() {
+  const pool = shuffle(NAMES);
+  ['home','away'].forEach((side, si) => {
+    teams[side].players = [];
+    for (let i=0;i<5;i++){
+      teams[side].players.push({
+        name: pool[si*6+i], num: i*3+2+si,
+        pts:0, reb:0, ast:0, fga:0, fgm:0,
+        skill: 0.35 + Math.random()*0.35,
+        x: side==='home'? W*0.3 : W*0.7, y: 50+i*62,
+        tx:0, ty:0
+      });
+    }
+  });
+}
+
+// stanje igre
+let g;
+function newGame() {
+  initPlayers();
+  teams.home.pts = teams.away.pts = 0;
+  teams.home.fouls = teams.away.fouls = 0;
+  g = {
+    quarter: 1, clock: 600, attacking: Math.random()>.5?'home':'away',
+    running: false, over: false,
+    ball: {x:W/2,y:H/2,holder:null,flying:false,t:0,dur:0,sx:0,sy:0,ex:0,ey:0,arc:0,shot:false,made:false,nextHolder:null},
+    actionTimer: 0, passesLeft: 0, flash: 0,
+  };
+  document.getElementById('log').innerHTML = '';
+  updateScore(); renderTables();
+  setPossession();
+  addLog(g.clock, 'Sudac baca loptu u zrak — utakmica počinje!', '');
+}
+
+function setPossession() {
+  const team = teams[g.attacking].players;
+  team.forEach(p => { p.tx = (g.attacking==='home'? W*0.15:W*0.55)+Math.random()*W*0.3; p.ty = 40+Math.random()*(H-80); });
+  teams[g.attacking==='home'?'away':'home'].players.forEach(p => { p.tx = (g.attacking==='home'? W*0.5:W*0.15)+Math.random()*W*0.3; p.ty = 40+Math.random()*(H-80); });
+  g.ball.holder = team[Math.floor(Math.random()*team.length)];
+  g.ball.flying = false;
+  g.passesLeft = 1 + Math.floor(Math.random()*4);
+  g.actionTimer = 500 + Math.random()*400;
+}
+
+const hoops = [ {x:26,y:H/2}, {x:W-26,y:H/2} ];
+
+function startFlight(fx,fy,tx,ty,dur,shot){
+  const b=g.ball; b.flying=true; b.sx=fx;b.sy=fy;b.ex=tx;b.ey=ty;b.t=0;b.dur=dur;b.holder=null;b.shot=shot;
+}
+
+function doAction() {
+  const b = g.ball, team = teams[g.attacking].players;
+  if (g.passesLeft > 0 && Math.random() > 0.28) {
+    g.passesLeft--;
+    const from = b.holder;
+    let mate = team[Math.floor(Math.random()*team.length)];
+    while (mate===from) mate = team[Math.floor(Math.random()*team.length)];
+    b.nextHolder = mate; b._assistFrom = from;
+    startFlight(from.x,from.y,mate.x,mate.y,16,false);
+  } else {
+    const from = b.holder;
+    const three = Math.random() > 0.68;
+    from.fga++;
+    const base = from.skill * (three?0.72:1.05);
+    const made = Math.random() < base * 0.42 + 0.16;
+    b._shooter = from; b._three = three; b.made = made;
+    const hoop = g.attacking==='home'? hoops[1]:hoops[0];
+    startFlight(from.x,from.y,hoop.x,hoop.y,26,true);
+  }
+}
+
+function resolveShot() {
+  const b = g.ball, sh = b._shooter, pts = b._three?3:2;
+  const t = teams[g.attacking];
+  if (b.made) {
+    sh.fgm++; sh.pts += pts; t.pts += pts;
+    if (b._assistShooter && b._assistShooter!==sh) b._assistShooter.ast++;
+    addLog(g.clock, `${sh.name} ${b._three?'ZA TRICU! 💥':'pogađa'} (+${pts})`, g.attacking, `${teams.home.pts}-${teams.away.pts}`);
+    g.flash = 18;
+  } else {
+    // skok
+    const rebTeam = Math.random()>0.72 ? g.attacking : (g.attacking==='home'?'away':'home');
+    const rp = teams[rebTeam].players[Math.floor(Math.random()*5)]; rp.reb++;
+    addLog(g.clock, `${sh.name} ${b._three?'promašuje tricu':'promašuje'} — skok: ${rp.name}`, rebTeam);
+  }
+  updateScore(); renderTables();
+  g.attacking = g.attacking==='home'?'away':'home';
+  setPossession();
+}
+
+function updateScore(){
+  document.getElementById('hp').textContent = teams.home.pts;
+  document.getElementById('ap').textContent = teams.away.pts;
+  document.getElementById('hb').textContent = teams.home.fouls>=5?'BONUS':'';
+  document.getElementById('ab').textContent = teams.away.fouls>=5?'BONUS':'';
+}
+
+function addLog(clock, text, side, score) {
+  const log = document.getElementById('log');
+  const m = Math.floor(clock/60), s = Math.floor(clock%60);
+  const div = document.createElement('div');
+  div.className = 'ev';
+  const cls = side==='home'?'h':side==='away'?'a':'';
+  div.innerHTML = `<span class="t">Q${g.quarter} ${m}:${String(s).padStart(2,'0')}</span>`+
+                  `<span class="${cls}">${text}${score?` <span class="score">${score}</span>`:''}</span>`;
+  log.insertBefore(div, log.firstChild);
+}
+
+function renderTables() {
+  ['home','away'].forEach(side=>{
+    const tb = document.getElementById(side==='home'?'tb-home':'tb-away');
+    document.getElementById(side==='home'?'th-home':'th-away').textContent = teams[side].name;
+    tb.innerHTML = teams[side].players.map(p=>
+      `<tr><td>#${p.num} ${p.name}</td><td>${p.pts}</td><td>${p.reb}</td><td>${p.ast}</td><td>${p.fgm}/${p.fga}</td></tr>`
+    ).join('');
+  });
+}
+
+// --- render terena ---
+function drawCourt(){
+  ctx.fillStyle='#c9853f'; ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='rgba(0,0,0,.06)';
+  for(let x=0;x<W;x+=24){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  ctx.strokeStyle='#f4f1e8'; ctx.lineWidth=2.5;
+  ctx.strokeRect(14,14,W-28,H-28);
+  ctx.beginPath();ctx.moveTo(W/2,14);ctx.lineTo(W/2,H-14);ctx.stroke();
+  ctx.beginPath();ctx.arc(W/2,H/2,40,0,7);ctx.stroke();
+  ctx.strokeRect(14,H/2-48,78,96);
+  ctx.strokeRect(W-92,H/2-48,78,96);
+  ctx.beginPath();ctx.arc(14,H/2,150,-Math.PI/2.7,Math.PI/2.7);ctx.stroke();
+  ctx.beginPath();ctx.arc(W-14,H/2,150,Math.PI-Math.PI/2.7,Math.PI+Math.PI/2.7);ctx.stroke();
+  hoops.forEach(h=>{ctx.fillStyle='#d94a2a';ctx.beginPath();ctx.arc(h.x,h.y,7,0,7);ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=1.5;ctx.stroke();});
+}
+
+function drawScene(){
+  drawCourt();
+  ['home','away'].forEach(side=>{
+    teams[side].players.forEach(p=>{
+      ctx.fillStyle='rgba(0,0,0,.22)';ctx.beginPath();ctx.ellipse(p.x,p.y+11,10,4,0,0,7);ctx.fill();
+      ctx.fillStyle=teams[side].color;ctx.beginPath();ctx.arc(p.x,p.y,10,0,7);ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,.7)';ctx.lineWidth=1.5;ctx.stroke();
+      ctx.fillStyle='#fff';ctx.font='bold 9px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(p.num,p.x,p.y);
+      if(p===g.ball.holder){ctx.strokeStyle='#ffe14a';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(p.x,p.y,14,0,7);ctx.stroke();}
+    });
+  });
+  const b=g.ball, by=b.y-(b.arc||0);
+  ctx.fillStyle='rgba(0,0,0,.2)';ctx.beginPath();ctx.ellipse(b.x,b.y+3,6,2.5,0,0,7);ctx.fill();
+  ctx.fillStyle='#e8863b';ctx.beginPath();ctx.arc(b.x,by,6,0,7);ctx.fill();
+  ctx.strokeStyle='#5a3212';ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(b.x,by,6,0,7);ctx.stroke();
+  if(g.flash>0){ctx.fillStyle=`rgba(255,225,74,${g.flash/36})`;ctx.fillRect(0,0,W,H);g.flash--;}
+}
+
+// --- petlja ---
+let last = performance.now(), speed = 2;
+function loop(now){
+  const dt=(now-last)/1000; last=now;
+  if(g.running && !g.over){
+    // sat
+    g.clock -= dt*10*speed*0.5;
+    if(g.clock<=0){
+      g.clock=600;
+      if(g.quarter>=4){
+        g.over=true; g.running=false;
+        const w = teams.home.pts>teams.away.pts?'SOKOLOVI':teams.away.pts>teams.home.pts?'RISOVI':'NERIJEŠENO';
+        addLog(0, `KRAJ UTAKMICE! Pobjednik: ${w} (${teams.home.pts}-${teams.away.pts})`, '', `${teams.home.pts}-${teams.away.pts}`);
+        document.getElementById('qtr').textContent='KRAJ';
+        document.getElementById('clock').textContent='0:00';
+      } else {
+        g.quarter++;
+        addLog(600, `Kraj ${g.quarter-1}. četvrtine`, '');
+      }
+    }
+    // akcije
+    const b=g.ball;
+    if(!b.flying && b.holder){
+      g.actionTimer -= dt*1000*speed;
+      const hoop=g.attacking==='home'?hoops[1]:hoops[0];
+      b.holder.tx += (hoop.x-b.holder.tx)*0.015*speed;
+      if(g.actionTimer<=0) doAction();
+    }
+    if(b.flying){
+      b.t += speed*0.6;
+      const k=Math.min(1,b.t/b.dur);
+      b.x=b.sx+(b.ex-b.sx)*k; b.y=b.sy+(b.ey-b.sy)*k;
+      b.arc=Math.sin(k*Math.PI)*(b.shot?34:14);
+      if(k>=1){
+        b.flying=false;
+        if(b.shot){ resolveShot(); }
+        else { b._assistShooter=b._assistFrom; b.holder=b.nextHolder; g.actionTimer=400+Math.random()*500; }
+      }
+    } else if(b.holder){ b.x=b.holder.x; b.y=b.holder.y-10; b.arc=0; }
+
+    // kretanje
+    ['home','away'].forEach(side=>teams[side].players.forEach(p=>{p.x+=(p.tx-p.x)*0.05*Math.min(2,speed);p.y+=(p.ty-p.y)*0.05*Math.min(2,speed);}));
+
+    // sat prikaz
+    const m=Math.floor(g.clock/60),s=Math.floor(g.clock%60);
+    document.getElementById('clock').textContent=`${m}:${String(s).padStart(2,'0')}`;
+    document.getElementById('qtr').textContent=g.over?'KRAJ':`ČETVRTINA ${g.quarter}`;
+  }
+  drawScene();
+  requestAnimationFrame(loop);
+}
+
+// --- kontrole ---
+document.getElementById('play').onclick=()=>{ if(g.over) newGame(); g.running=true; };
+document.getElementById('pause').onclick=()=>{ g.running=false; };
+document.getElementById('restart').onclick=()=>{ newGame(); g.running=true; };
+document.querySelectorAll('.speed button').forEach(btn=>btn.onclick=()=>{
+  speed=+btn.dataset.s;
+  document.querySelectorAll('.speed button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+});
+
+newGame();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
