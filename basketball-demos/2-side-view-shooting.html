@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Košarka 2D — Bočni šut s fizikom</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    background: linear-gradient(#2b1a3a, #120b1c);
+    font-family: "Segoe UI", system-ui, sans-serif; color: #f0e9ff; padding: 20px;
+  }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; }
+  .hud { display: flex; gap: 24px; font-size: 15px; color: #c8b8e8; font-variant-numeric: tabular-nums; }
+  .hud b { color: #ffd24a; font-size: 20px; }
+  canvas { border-radius: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.55); max-width: 100%; height: auto; cursor: pointer; }
+  p.hint { margin: 0; font-size: 13px; color: #9585b5; }
+</style>
+</head>
+<body>
+  <h1>🏀 Šut iz igre — bočni pogled</h1>
+  <div class="hud">
+    <span>Koševi: <b id="made">0</b></span>
+    <span>Pokušaji: <b id="att">0</b></span>
+    <span>Niz: <b id="streak">0</b></span>
+  </div>
+  <canvas id="c" width="880" height="480"></canvas>
+  <p class="hint">Klikni bilo gdje za novi šut — igrač automatski cilja koš.</p>
+
+<script>
+const c = document.getElementById('c'), ctx = c.getContext('2d');
+const W = c.width, H = c.height, GROUND = H - 60;
+const G = 0.35; // gravitacija
+
+const hoop = { x: W - 130, y: 190, r: 26 }; // obruč (rim), lijeva strana obruča
+const rimLeft  = { x: hoop.x - hoop.r, y: hoop.y };
+const rimRight = { x: hoop.x + hoop.r, y: hoop.y };
+
+let stats = { made: 0, att: 0, streak: 0 };
+let ball, state, shooterArm = 0, resultText = '', resultTimer = 0, scored = false;
+
+function newShot() {
+  const startX = 140, startY = GROUND - 70;
+  // izračun početne brzine da otprilike pogodi koš (uz mali nasumični promašaj)
+  const targetX = hoop.x, targetY = hoop.y - 4;
+  const apex = 120 + Math.random()*40;
+  const peakY = Math.min(startY, targetY) - apex;
+  const vy = -Math.sqrt(2 * G * (startY - peakY));
+  const tUp = -vy / G;
+  const tDown = Math.sqrt(2 * (targetY - peakY) / G);
+  const totalT = tUp + tDown;
+  const miss = (Math.random() - 0.5) * 46; // horizontalni promašaj
+  const vx = (targetX + miss - startX) / totalT;
+  ball = { x: startX, y: startY, vx, vy, spin: 0, r: 13 };
+  state = 'fly'; scored = false; shooterArm = 0;
+  stats.att++;
+  document.getElementById('att').textContent = stats.att;
+}
+
+function scoreBall() {
+  stats.made++; stats.streak++;
+  document.getElementById('made').textContent = stats.made;
+  document.getElementById('streak').textContent = stats.streak;
+  resultText = stats.streak >= 3 ? '🔥 VATRA! +2' : 'KOŠ! +2';
+  resultTimer = 70; scored = true;
+}
+function missBall() {
+  stats.streak = 0;
+  document.getElementById('streak').textContent = 0;
+  resultText = 'Promašaj';
+  resultTimer = 50;
+}
+
+function circleHit(cx, cy) {
+  const dx = ball.x - cx, dy = ball.y - cy;
+  const d = Math.hypot(dx, dy);
+  if (d < ball.r + 5) {
+    const nx = dx/d, ny = dy/d;
+    const dot = ball.vx*nx + ball.vy*ny;
+    ball.vx = (ball.vx - 2*dot*nx) * 0.7;
+    ball.vy = (ball.vy - 2*dot*ny) * 0.7;
+    ball.x = cx + nx*(ball.r+5); ball.y = cy + ny*(ball.r+5);
+    return true;
+  }
+  return false;
+}
+
+function update() {
+  if (state === 'fly') {
+    ball.vy += G;
+    ball.x += ball.vx; ball.y += ball.vy;
+    ball.spin += ball.vx * 0.03;
+
+    // prolaz kroz obruč (odozgo prema dolje, između rubova)
+    if (!scored && ball.vy > 0 &&
+        ball.x > rimLeft.x && ball.x < rimRight.x &&
+        ball.y > hoop.y - 6 && ball.y < hoop.y + 14) {
+      scoreBall();
+      // usmjeri loptu ravno dolje kroz mrežu
+      ball.vx *= 0.2; ball.vy = Math.max(ball.vy, 3);
+    }
+
+    // odbijanje od rubova obruča ako nije čist koš
+    if (!scored) { circleHit(rimLeft.x, rimLeft.y); circleHit(rimRight.x, rimRight.y); }
+
+    // tabla (backboard)
+    if (ball.x + ball.r > W - 60 && ball.y < 240) {
+      ball.x = W - 60 - ball.r; ball.vx *= -0.6;
+    }
+
+    // pod
+    if (ball.y + ball.r > GROUND) {
+      ball.y = GROUND - ball.r; ball.vy *= -0.55; ball.vx *= 0.8;
+      if (Math.abs(ball.vy) < 1.5) {
+        if (!scored) missBall();
+        state = 'rest';
+        setTimeout(newShot, 700);
+      }
+    }
+    // izlaz iz ekrana
+    if (ball.x - ball.r > W) {
+      if (!scored) missBall();
+      state = 'rest'; setTimeout(newShot, 400);
+    }
+  }
+  shooterArm = Math.min(shooterArm + 0.08, 1);
+  if (resultTimer > 0) resultTimer--;
+}
+
+function drawBackboard() {
+  // stup
+  ctx.fillStyle = '#3a3350'; ctx.fillRect(W-40, 120, 14, GROUND-120);
+  // tabla
+  ctx.fillStyle = 'rgba(255,255,255,.9)';
+  ctx.fillRect(W-62, 130, 8, 110);
+  ctx.strokeStyle = '#d94a2a'; ctx.lineWidth = 3;
+  ctx.strokeRect(W-58, 170, 4, 44);
+  // obruč
+  ctx.strokeStyle = '#ff5a2a'; ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(rimLeft.x, hoop.y); ctx.lineTo(rimRight.x, hoop.y); ctx.stroke();
+  // mreža
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 8; i++) {
+    const t = i/8;
+    const topX = rimLeft.x + (rimRight.x-rimLeft.x)*t;
+    const botX = hoop.x - 12 + 24*t;
+    ctx.beginPath(); ctx.moveTo(topX, hoop.y); ctx.lineTo(botX, hoop.y+34); ctx.stroke();
+  }
+  for (let j = 1; j <= 3; j++) {
+    const y = hoop.y + j*11, w = hoop.r*2 - j*5;
+    ctx.beginPath(); ctx.moveTo(hoop.x-w/2, y); ctx.lineTo(hoop.x+w/2, y); ctx.stroke();
+  }
+}
+
+function drawShooter() {
+  const bx = 130, by = GROUND;
+  ctx.strokeStyle = '#ff6b4a'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  // noge
+  ctx.beginPath(); ctx.moveTo(bx, by-40); ctx.lineTo(bx-10, by); ctx.moveTo(bx, by-40); ctx.lineTo(bx+10, by); ctx.stroke();
+  // trup
+  ctx.beginPath(); ctx.moveTo(bx, by-40); ctx.lineTo(bx, by-70); ctx.stroke();
+  // glava
+  ctx.fillStyle = '#ffcaa8';
+  ctx.beginPath(); ctx.arc(bx, by-80, 9, 0, Math.PI*2); ctx.fill();
+  // ruka koja šutira (animirano diže se)
+  const a = -Math.PI/2 - shooterArm*0.6;
+  const hx = bx + Math.cos(a)*26, hy = (by-62) + Math.sin(a)*26;
+  ctx.strokeStyle = '#ff6b4a';
+  ctx.beginPath(); ctx.moveTo(bx, by-62); ctx.lineTo(hx, hy); ctx.stroke();
+}
+
+function drawBall() {
+  ctx.save();
+  ctx.translate(ball.x, ball.y); ctx.rotate(ball.spin);
+  const grd = ctx.createRadialGradient(-4,-4,2,0,0,ball.r);
+  grd.addColorStop(0,'#ffa94d'); grd.addColorStop(1,'#d9691f');
+  ctx.fillStyle = grd;
+  ctx.beginPath(); ctx.arc(0,0,ball.r,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#5a2c0c'; ctx.lineWidth=1.6;
+  ctx.beginPath(); ctx.arc(0,0,ball.r,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-ball.r,0); ctx.lineTo(ball.r,0);
+  ctx.moveTo(0,-ball.r); ctx.lineTo(0,ball.r); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-ball.r,0,ball.r,-0.5,0.5); ctx.stroke();
+  ctx.beginPath(); ctx.arc(ball.r,0,ball.r,Math.PI-0.5,Math.PI+0.5); ctx.stroke();
+  ctx.restore();
+}
+
+function draw() {
+  // pozadina dvorane
+  const sky = ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#3a2a52'); sky.addColorStop(1,'#241733');
+  ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
+  // publika (točkice)
+  for (let i=0;i<W;i+=16){ for(let j=20;j<120;j+=16){
+    ctx.fillStyle = `hsl(${(i*j)%360},40%,45%)`;
+    ctx.globalAlpha=.25; ctx.fillRect(i, j, 6, 6);
+  }} ctx.globalAlpha=1;
+  // parket
+  ctx.fillStyle = '#c9853f'; ctx.fillRect(0, GROUND, W, H-GROUND);
+  ctx.strokeStyle='rgba(255,255,255,.5)'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(0,GROUND); ctx.lineTo(W,GROUND); ctx.stroke();
+
+  drawBackboard();
+  drawShooter();
+  drawBall();
+
+  if (resultTimer > 0) {
+    ctx.globalAlpha = Math.min(1, resultTimer/25);
+    ctx.fillStyle = scored ? '#ffe14a' : '#ff7a7a';
+    ctx.font = 'bold 40px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(resultText, W/2, 90);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function frame(){ update(); draw(); requestAnimationFrame(frame); }
+c.addEventListener('click', () => { if (state !== 'fly') newShot(); });
+newShot();
+frame();
+</script>
+</body>
+</html>

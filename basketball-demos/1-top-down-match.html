@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Košarka 2D — Pogled odozgo</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: radial-gradient(circle at 50% 0%, #1b2735, #090a0f);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: #e8eef5;
+    padding: 20px;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: .5px; }
+  .scoreboard {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: #11161f;
+    border: 1px solid #2a3444;
+    border-radius: 12px;
+    padding: 10px 24px;
+    font-variant-numeric: tabular-nums;
+  }
+  .team { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 22px; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; }
+  .home .dot { background: #ff6b4a; }
+  .away .dot { background: #4aa8ff; }
+  .clock { font-size: 15px; color: #8a97a8; letter-spacing: 1px; }
+  canvas {
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.5);
+    max-width: 100%;
+    height: auto;
+  }
+  button {
+    background: #2a3444; color: #e8eef5; border: none; border-radius: 8px;
+    padding: 8px 18px; font-size: 14px; cursor: pointer; transition: background .2s;
+  }
+  button:hover { background: #3a4658; }
+</style>
+</head>
+<body>
+  <h1>🏀 Virtualna utakmica — pogled odozgo</h1>
+  <div class="scoreboard">
+    <div class="team home"><span class="dot"></span><span>DOM</span><span id="scoreHome">0</span></div>
+    <div class="clock" id="clock">Q1 · 10:00</div>
+    <div class="team away"><span id="scoreAway">0</span><span>GOST</span><span class="dot"></span></div>
+  </div>
+  <canvas id="court" width="900" height="500"></canvas>
+  <button id="reset">Nova akcija</button>
+
+<script>
+const cv = document.getElementById('court');
+const ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+
+// --- Teren ---
+function drawCourt() {
+  // podloga
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#c9853f'); g.addColorStop(1, '#b0702f');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  // daske teksture
+  ctx.strokeStyle = 'rgba(0,0,0,.06)';
+  for (let x = 0; x < W; x += 30) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+
+  ctx.strokeStyle = '#f4f1e8'; ctx.lineWidth = 3;
+  // vanjski okvir
+  ctx.strokeRect(20, 20, W - 40, H - 40);
+  // centralna linija
+  ctx.beginPath(); ctx.moveTo(W/2, 20); ctx.lineTo(W/2, H-20); ctx.stroke();
+  // centralni krug
+  ctx.beginPath(); ctx.arc(W/2, H/2, 55, 0, Math.PI*2); ctx.stroke();
+  // reket + polukrug lijevo
+  ctx.strokeRect(20, H/2-70, 110, 140);
+  ctx.beginPath(); ctx.arc(130, H/2, 45, -Math.PI/2, Math.PI/2); ctx.stroke();
+  // reket + polukrug desno
+  ctx.strokeRect(W-130, H/2-70, 110, 140);
+  ctx.beginPath(); ctx.arc(W-130, H/2, 45, Math.PI/2, 3*Math.PI/2); ctx.stroke();
+  // linije za tricu
+  ctx.beginPath(); ctx.arc(20, H/2, 200, -Math.PI/2.6, Math.PI/2.6); ctx.stroke();
+  ctx.beginPath(); ctx.arc(W-20, H/2, 200, Math.PI - Math.PI/2.6, Math.PI + Math.PI/2.6); ctx.stroke();
+}
+
+// --- Koševi ---
+const hoops = [ {x: 34, y: H/2}, {x: W-34, y: H/2} ];
+function drawHoops() {
+  hoops.forEach(h => {
+    ctx.fillStyle = '#d94a2a';
+    ctx.beginPath(); ctx.arc(h.x, h.y, 9, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+  });
+}
+
+// --- Igrači ---
+function makePlayers() {
+  const arr = [];
+  for (let i = 0; i < 5; i++) arr.push({ team:'home', color:'#ff6b4a', x:W*0.3+Math.random()*60, y:60+i*95, tx:0, ty:0 });
+  for (let i = 0; i < 5; i++) arr.push({ team:'away', color:'#4aa8ff', x:W*0.7-Math.random()*60, y:60+i*95, tx:0, ty:0 });
+  return arr;
+}
+let players = makePlayers();
+
+function scatter() {
+  players.forEach(p => {
+    p.tx = (p.team==='home' ? W*0.18 : W*0.55) + Math.random()*W*0.28;
+    p.ty = 60 + Math.random()*(H-120);
+  });
+}
+
+// --- Lopta ---
+let ball = { x:W/2, y:H/2, holder:null, flying:false, sx:0, sy:0, ex:0, ey:0, t:0, dur:0 };
+let score = { home:0, away:0 };
+let attacking = 'home';
+
+function newPossession() {
+  scatter();
+  const team = players.filter(p => p.team === attacking);
+  ball.holder = team[Math.floor(Math.random()*team.length)];
+  ball.flying = false;
+  passesLeft = 2 + Math.floor(Math.random()*3);
+  scheduleAction(700);
+}
+
+let passesLeft = 3;
+let actionTimer = 0;
+
+function scheduleAction(delay) { actionTimer = delay; }
+
+function startFlight(fromX, fromY, toX, toY, dur) {
+  ball.flying = true;
+  ball.sx = fromX; ball.sy = fromY; ball.ex = toX; ball.ey = toY;
+  ball.t = 0; ball.dur = dur; ball.holder = null;
+}
+
+function doAction() {
+  const team = players.filter(p => p.team === attacking);
+  if (passesLeft > 0 && Math.random() > 0.25) {
+    // dodavanje suigraču
+    passesLeft--;
+    const from = ball.holder;
+    let mate = team[Math.floor(Math.random()*team.length)];
+    while (mate === from) mate = team[Math.floor(Math.random()*team.length)];
+    ball._nextHolder = mate;
+    startFlight(from.x, from.y, mate.x, mate.y, 22);
+  } else {
+    // šut na koš
+    const from = ball.holder;
+    const hoop = attacking === 'home' ? hoops[1] : hoops[0];
+    ball._shot = true;
+    ball._made = Math.random() > 0.45;
+    startFlight(from.x, from.y, hoop.x, hoop.y, 34);
+  }
+}
+
+// --- Semafor / vrijeme ---
+let quarter = 1, seconds = 600;
+function fmtClock() {
+  const m = Math.floor(seconds/60), s = seconds%60;
+  return `Q${quarter} · ${m}:${String(s).padStart(2,'0')}`;
+}
+
+// --- Petlja ---
+let last = performance.now();
+function loop(now) {
+  const dt = (now - last) / 1000; last = now;
+
+  // sat
+  seconds -= dt * 8;
+  if (seconds <= 0) {
+    seconds = 600;
+    if (quarter < 4) quarter++; else quarter = 1;
+  }
+  document.getElementById('clock').textContent = fmtClock();
+
+  // kretanje igrača prema ciljevima
+  players.forEach(p => {
+    p.x += (p.tx - p.x) * 0.04;
+    p.y += (p.ty - p.y) * 0.04;
+  });
+
+  // odbrojavanje do akcije
+  if (!ball.flying && ball.holder) {
+    actionTimer -= dt * 1000;
+    // nositelj lagano driblja prema košu
+    const hoop = attacking === 'home' ? hoops[1] : hoops[0];
+    ball.holder.tx += (hoop.x - ball.holder.tx) * 0.02;
+    if (actionTimer <= 0) doAction();
+  }
+
+  // let lopte
+  if (ball.flying) {
+    ball.t++;
+    const k = ball.t / ball.dur;
+    ball.x = ball.sx + (ball.ex - ball.sx) * k;
+    ball.y = ball.sy + (ball.ey - ball.sy) * k;
+    // luk (parabola)
+    ball._arc = Math.sin(k * Math.PI) * (ball._shot ? 40 : 18);
+    if (ball.t >= ball.dur) {
+      ball.flying = false;
+      if (ball._shot) {
+        if (ball._made) {
+          score[attacking] += (Math.random() > 0.7 ? 3 : 2);
+          document.getElementById('scoreHome').textContent = score.home;
+          document.getElementById('scoreAway').textContent = score.away;
+          flash = 20;
+        }
+        ball._shot = false;
+        attacking = attacking === 'home' ? 'away' : 'home';
+        setTimeout(newPossession, 500);
+      } else {
+        ball.holder = ball._nextHolder;
+        scheduleAction(600 + Math.random()*500);
+      }
+    }
+  } else if (ball.holder) {
+    ball.x = ball.holder.x;
+    ball.y = ball.holder.y - 12;
+    ball._arc = 0;
+  }
+
+  // --- crtanje ---
+  drawCourt();
+  drawHoops();
+
+  players.forEach(p => {
+    // sjena
+    ctx.fillStyle = 'rgba(0,0,0,.25)';
+    ctx.beginPath(); ctx.ellipse(p.x, p.y+13, 12, 5, 0, 0, Math.PI*2); ctx.fill();
+    // tijelo
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.7)'; ctx.lineWidth = 2; ctx.stroke();
+    if (p === ball.holder) {
+      ctx.strokeStyle = '#ffe14a'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 16, 0, Math.PI*2); ctx.stroke();
+    }
+  });
+
+  // lopta
+  const by = ball.y - (ball._arc || 0);
+  ctx.fillStyle = 'rgba(0,0,0,.2)';
+  ctx.beginPath(); ctx.ellipse(ball.x, ball.y+4, 7, 3, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#e8863b';
+  ctx.beginPath(); ctx.arc(ball.x, by, 7, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#5a3212'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(ball.x, by, 7, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ball.x-7, by); ctx.lineTo(ball.x+7, by); ctx.stroke();
+
+  // bljesak koša
+  if (flash > 0) {
+    ctx.fillStyle = `rgba(255,225,74,${flash/40})`;
+    ctx.fillRect(0,0,W,H);
+    flash--;
+  }
+
+  requestAnimationFrame(loop);
+}
+let flash = 0;
+
+document.getElementById('reset').onclick = () => { attacking = Math.random()>.5?'home':'away'; newPossession(); };
+
+scatter();
+newPossession();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
