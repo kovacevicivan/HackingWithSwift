@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NBA Virtual — Match Simulation</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; min-height:100vh; padding:16px; display:flex; flex-direction:column; align-items:center; gap:12px;
+    background: radial-gradient(circle at 50% -10%, #14202f, #05080d 70%);
+    font-family:"Segoe UI",system-ui,sans-serif; color:#e9eef5;
+  }
+  h1 { font-size:17px; margin:0; font-weight:600; letter-spacing:.3px; }
+  .app { width:1000px; max-width:100%; display:flex; flex-direction:column; gap:12px; }
+
+  /* seed / provably-fair bar */
+  .seedbar {
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12px;
+    background:#0b131d; border:1px solid #1d2a3a; border-radius:10px; padding:8px 12px;
+  }
+  .seedbar .tag { color:#6a7d93; letter-spacing:1px; }
+  .seedbar code { background:#131f2c; padding:3px 8px; border-radius:6px; color:#7fd0ff; font-family:ui-monospace,monospace; letter-spacing:1px; }
+  .seedbar input { background:#131f2c; border:1px solid #223247; color:#cfe3f5; border-radius:6px; padding:4px 8px; width:120px; font-family:ui-monospace,monospace; }
+  .seedbar .verify { color:#4fd18b; display:inline-flex; align-items:center; gap:4px; }
+
+  /* scoreboard */
+  .scoreboard {
+    display:grid; grid-template-columns:1fr auto 1fr; align-items:stretch; gap:0;
+    background:linear-gradient(#0f1a26,#0a121b); border:1px solid #1d2a3a; border-radius:14px; overflow:hidden;
+  }
+  .team-box { display:flex; align-items:center; gap:14px; padding:14px 22px; position:relative; }
+  .team-box.away { flex-direction:row-reverse; text-align:right; }
+  .team-box::before { content:''; position:absolute; top:0; bottom:0; width:6px; }
+  .team-box.home::before { left:0; background:var(--ch); }
+  .team-box.away::before { right:0; background:var(--ca); }
+  .tinfo .abbr { font-size:26px; font-weight:800; letter-spacing:1px; line-height:1; }
+  .tinfo .city { font-size:11px; color:#7b8da0; letter-spacing:.5px; }
+  .tinfo .meta { font-size:10px; color:#5f7288; margin-top:3px; letter-spacing:1px; }
+  .pts { font-size:52px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1; }
+  .center { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:10px 26px; background:#0a1017; border-left:1px solid #16222f; border-right:1px solid #16222f; min-width:150px; }
+  .qtr { font-size:12px; letter-spacing:3px; color:#8a9db3; }
+  .clock { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:1px; }
+  .shotclock { font-size:13px; font-weight:700; color:#ff5a45; font-variant-numeric:tabular-nums; margin-top:2px; }
+  .shotclock.low { animation:pulse .5s infinite; }
+  @keyframes pulse { 50%{ opacity:.3 } }
+  .bonus { font-size:9px; letter-spacing:1px; color:#ffce4a; height:12px; margin-top:2px; }
+
+  /* court */
+  .stage { position:relative; }
+  canvas#court { width:100%; height:auto; display:block; border-radius:12px; box-shadow:0 18px 44px rgba(0,0,0,.55); }
+  .status { position:absolute; top:10px; left:50%; transform:translateX(-50%); font-size:11px; letter-spacing:2px;
+    background:rgba(6,10,16,.7); border:1px solid #23374d; padding:4px 12px; border-radius:20px; color:#9fb4cc; pointer-events:none; }
+
+  /* bottom row */
+  .bottom { display:grid; grid-template-columns: 1fr 300px; gap:12px; }
+  @media (max-width:860px){ .bottom{ grid-template-columns:1fr; } }
+  .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; background:#0b131d; border:1px solid #1d2a3a; border-radius:10px; padding:10px 12px; }
+  button { background:#1a2735; color:#e9eef5; border:none; border-radius:8px; padding:8px 15px; font-size:13px; cursor:pointer; transition:background .15s; }
+  button:hover { background:#243546; }
+  button.primary { background:#2f7d4f; } button.primary:hover{ background:#379059; }
+  button.accent { background:#2d5aa8; } button.accent:hover{ background:#3568c0; }
+  .spd { display:flex; gap:4px; margin-left:auto; }
+  .spd button.active { background:#3a5170; }
+
+  .feed { background:#0b131d; border:1px solid #1d2a3a; border-radius:10px; padding:8px 12px; }
+  .feed h3 { margin:2px 0 8px; font-size:10px; letter-spacing:2px; color:#6a7d93; }
+  .log { max-height:190px; overflow-y:auto; font-size:12px; line-height:1.5; }
+  .log .ev { padding:3px 0; border-bottom:1px solid #131f2c; }
+  .log .tt { color:#5a6d84; font-variant-numeric:tabular-nums; }
+  .log .h { color:var(--ch); font-weight:600; } .log .a { color:var(--ca); font-weight:600; }
+  .log .sc { color:#ffd24a; font-weight:700; }
+  .log .big { color:#fff; }
+</style>
+</head>
+<body>
+  <h1>🏀 NBA Virtual — simulacija utakmice</h1>
+  <div class="app">
+
+    <div class="seedbar">
+      <span class="tag">MATCH ID</span> <code id="matchId">—</code>
+      <span class="tag">SEED</span> <input id="seedInput" value="" spellcheck="false">
+      <button class="accent" id="loadSeed">Učitaj seed</button>
+      <button id="replay">↻ Replay</button>
+      <span class="verify">✓ <span id="verifyTxt">deterministički ishod</span></span>
+    </div>
+
+    <div class="scoreboard" id="scoreboard">
+      <div class="team-box home">
+        <div class="tinfo"><div class="abbr" id="hAbbr">HOM</div><div class="city" id="hCity">Home City</div><div class="meta" id="hMeta"></div></div>
+        <div class="pts" id="hPts">0</div>
+      </div>
+      <div class="center">
+        <div class="qtr" id="qtr">Q1</div>
+        <div class="clock" id="clock">12:00</div>
+        <div class="shotclock" id="shot">24</div>
+        <div class="bonus" id="bonus"></div>
+      </div>
+      <div class="team-box away">
+        <div class="tinfo"><div class="abbr" id="aAbbr">AWY</div><div class="city" id="aCity">Away City</div><div class="meta" id="aMeta"></div></div>
+        <div class="pts" id="aPts">0</div>
+      </div>
+    </div>
+
+    <div class="stage">
+      <canvas id="court" width="1000" height="540"></canvas>
+      <div class="status" id="statusTxt">TIP-OFF</div>
+    </div>
+
+    <div class="bottom">
+      <div class="controls">
+        <button class="primary" id="play">▶ Pokreni</button>
+        <button id="pause">⏸ Pauza</button>
+        <button class="accent" id="newMatch">🎲 Nova utakmica</button>
+        <div class="spd">
+          <button data-s="1">1×</button>
+          <button data-s="2" class="active">2×</button>
+          <button data-s="4">4×</button>
+          <button data-s="8">8×</button>
+        </div>
+      </div>
+      <div class="feed">
+        <h3>PLAY-BY-PLAY</h3>
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* =========================================================================
+   NBA VIRTUAL — MATCH SIMULATION
+   Deterministički (provably-fair) engine: cijeli tijek utakmice (rezultat,
+   play-by-play, trajanja posjeda) izvodi se iz jednog 32-bit seeda preko
+   mulberry32 RNG-a. Isti seed => identična utakmica (auditabilno).
+   Animacija je samo vizualni prikaz unaprijed određenog ishoda.
+   ========================================================================= */
+
+// ---- Provably-fair RNG ----
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+let rng = Math.random;        // zamjenjuje se seedanim generatorom
+let SEED = 0;
+
+// ---- Kanvas / geometrija ----
+const cv = document.getElementById('court'), ctx = cv.getContext('2d');
+const W = cv.width, H = cv.height;
+const CY = H/2;
+const LX = 62, RX = W - 62;          // pozicije koševa (lijevi / desni)
+const ARC3 = 232;                     // radijus linije za tricu (px)
+
+// ---- NBA ekipe (za demo; za produkciju zamijeniti licenciranim/fiktivnim) ----
+const TEAMS = [
+  {abbr:'LAL',city:'Los Angeles',name:'Lakers',c:'#8c5cc8',c2:'#FDB927'},
+  {abbr:'BOS',city:'Boston',name:'Celtics',c:'#12a35a',c2:'#BA9653'},
+  {abbr:'GSW',city:'Golden State',name:'Warriors',c:'#3a6fd8',c2:'#FFC72C'},
+  {abbr:'MIA',city:'Miami',name:'Heat',c:'#e0264f',c2:'#F9A01B'},
+  {abbr:'MIL',city:'Milwaukee',name:'Bucks',c:'#1f7a45',c2:'#EEE1C6'},
+  {abbr:'DEN',city:'Denver',name:'Nuggets',c:'#2f5fb0',c2:'#FEC524'},
+  {abbr:'PHX',city:'Phoenix',name:'Suns',c:'#6b52d8',c2:'#E56020'},
+  {abbr:'DAL',city:'Dallas',name:'Mavericks',c:'#3a8fd8',c2:'#B8C4CA'},
+  {abbr:'PHI',city:'Philadelphia',name:'76ers',c:'#3a86d8',c2:'#ED174C'},
+  {abbr:'NYK',city:'New York',name:'Knicks',c:'#f58426',c2:'#006BB6'},
+  {abbr:'CHI',city:'Chicago',name:'Bulls',c:'#e0344f',c2:'#111'},
+  {abbr:'CLE',city:'Cleveland',name:'Cavaliers',c:'#a01450',c2:'#FDBB30'},
+  {abbr:'OKC',city:'Oklahoma City',name:'Thunder',c:'#2f9fd8',c2:'#EF3B24'},
+  {abbr:'MEM',city:'Memphis',name:'Grizzlies',c:'#6d86c9',c2:'#4a5aa8'},
+  {abbr:'SAC',city:'Sacramento',name:'Kings',c:'#7a4db0',c2:'#63727A'},
+  {abbr:'ATL',city:'Atlanta',name:'Hawks',c:'#e04a4e',c2:'#26282A'},
+];
+const POS = ['PG','SG','SF','PF','C'];
+const LAST = ['Carter','Brooks','Reed','Bell','Foster','Hayes','Turner','Grant','Wells',
+  'Rivers','Coleman','Hunter','Watkins','Palmer','Dixon','Banks','Cole','Meyers','Nash',
+  'Ellis','Vance','Boyd','Pratt','Sloan','Marsh','Quinn','Dawson','Frost','Nolan','Reeves'];
+
+function pick(arr){ return arr[Math.floor(rng()*arr.length)]; }
+function pickDistinct(arr, n){ const p=arr.slice(); const out=[]; for(let i=0;i<n;i++){ out.push(p.splice(Math.floor(rng()*p.length),1)[0]); } return out; }
+
+// ---- Stanje ----
+let teams, players, ball, quarter, clock, over, running=false, speed=2;
+let att, poss, animT, evIdx, handler, ballPos, ballArc, popups, flash, statusText;
+
+function makeTeam(t){
+  const names = pickDistinct(LAST,5);
+  const pl = [];
+  for(let i=0;i<5;i++){
+    pl.push({ pos:POS[i], name:names[i], num:2+Math.floor(rng()*40),
+      pts:0, reb:0, ast:0, fgm:0, fga:0, tpm:0, tpa:0,
+      x:0,y:0, tx:0,ty:0 });
+  }
+  return {...t, score:0, fouls:0, players:pl};
+}
+
+function startMatch(seed){
+  SEED = seed >>> 0;
+  rng = mulberry32(SEED);
+  const [ta, tb] = pickDistinct(TEAMS, 2);
+  teams = { home: makeTeam(ta), away: makeTeam(tb) };
+  quarter = 1; clock = 720; over = false;
+  att = rng() < 0.5 ? 'home' : 'away';
+  popups = []; flash = 0;
+
+  // vizualne početne pozicije
+  layoutForNewPossession(true);
+  ball = {}; ballPos = {x:W/2, y:CY}; ballArc = 0;
+
+  // UI
+  const idHex = SEED.toString(16).toUpperCase().padStart(8,'0');
+  document.getElementById('matchId').textContent = 'NBA-' + idHex;
+  document.getElementById('seedInput').value = SEED;
+  document.getElementById('hAbbr').textContent = teams.home.abbr;
+  document.getElementById('aAbbr').textContent = teams.away.abbr;
+  document.getElementById('hCity').textContent = teams.home.city + ' ' + teams.home.name;
+  document.getElementById('aCity').textContent = teams.away.city + ' ' + teams.away.name;
+  document.getElementById('hMeta').textContent = teams.home.players.map(p=>'#'+p.num).join(' ');
+  document.getElementById('aMeta').textContent = teams.away.players.map(p=>'#'+p.num).join(' ');
+  document.documentElement.style.setProperty('--ch', teams.home.c);
+  document.documentElement.style.setProperty('--ca', teams.away.c);
+  document.getElementById('log').innerHTML = '';
+  addLog('', 'Tip-off — ' + teams.home.abbr + ' vs ' + teams.away.abbr, '', false);
+
+  nextPossession(true);
+  render();
+}
+
+// napadački koš za ekipu u ovoj četvrtini (mijenja strane na poluvremenu)
+function attackX(teamKey){
+  const homeRight = quarter <= 2;
+  if(teamKey === 'home') return homeRight ? RX : LX;
+  return homeRight ? LX : RX;
+}
+
+// 5 napadačkih pozicija oko koša
+function offSpots(bx){
+  const dir = bx > W/2 ? 1 : -1;   // +1 = napada desno
+  const S = [[250,0],[195,-135],[195,135],[80,-165],[95,150]];
+  return S.map(([dx,dy]) => ({ x: bx - dir*dx, y: CY + dy }));
+}
+
+function layoutForNewPossession(instant){
+  const obx = attackX(att), dbx = attackX(att==='home'?'away':'home');
+  const os = offSpots(obx);
+  const offP = teams[att].players, defP = teams[att==='home'?'away':'home'].players;
+  offP.forEach((p,i)=>{ p.tx = os[i].x; p.ty = os[i].y; });
+  // obrana čuva svog igrača (između njega i vlastitog koša)
+  defP.forEach((p,i)=>{
+    const s = os[i];
+    p.tx = s.x + (obx - s.x)*0.26 + (rng()*20-10);
+    p.ty = s.y + (CY  - s.y)*0.15 + (rng()*20-10);
+  });
+  if(instant){ [...offP,...defP].forEach(p=>{ p.x=p.tx; p.y=p.ty; }); }
+}
+
+// ---------- Deterministički generator posjeda ----------
+function genPossession(){
+  const ev = [{t:'advance'}];
+  let consumed;
+
+  // turnover?
+  if(rng() < 0.125){
+    const steal = rng() < 0.5;
+    ev.push({t:'turnover', steal});
+    consumed = 4 + rng()*7;
+    return { ev, consumed, kind:'to', steal };
+  }
+
+  const nPass = 1 + Math.floor(rng()*4);
+  let cur = 0;
+  for(let i=0;i<nPass;i++){
+    let to = Math.floor(rng()*5);
+    while(to === cur) to = Math.floor(rng()*5);
+    ev.push({t:'pass', to});
+    cur = to;
+  }
+  const drive = rng() < 0.34;
+  if(drive) ev.push({t:'drive', who:cur});
+
+  const three = rng() < (drive ? 0.12 : 0.44);
+  const foul  = rng() < 0.085;
+  const baseP = three ? 0.365 : (drive ? 0.605 : 0.505);
+  const made  = rng() < baseP;
+  ev.push({t:'shot', who:cur, three, made});
+
+  let ftTotal = 0, ftMakes = 0;
+  if(foul){
+    ftTotal = made ? 1 : (three ? 3 : 2);
+    for(let k=0;k<ftTotal;k++) if(rng() < 0.775) ftMakes++;
+    ev.push({t:'ft', total:ftTotal, makes:ftMakes});
+  }
+  let reb = null;
+  if(!made && !foul){
+    reb = { off: rng() < 0.27, who: Math.floor(rng()*5) };
+    ev.push({t:'rebound', off:reb.off, who:reb.who});
+  }
+  consumed = 6 + rng()*13 + (three?1:0) + (drive?2:0);
+
+  const pts = (made ? (three?3:2) : 0) + ftMakes;
+  return { ev, consumed, kind:'shot', shooter:cur, three, made, pts, foul, ftTotal, ftMakes, reb };
+}
+
+// per-event trajanje animacije (realne sekunde @1x)
+const EVDUR = { advance:1.0, pass:0.5, drive:0.75, shot:0.8, ft:0.9, rebound:0.6, turnover:0.7 };
+
+function nextPossession(first){
+  layoutForNewPossession(false);
+  poss = genPossession();
+  poss.totalAnim = poss.ev.reduce((s,e)=> s + (EVDUR[e.t]||0.5), 0);
+  poss.clockStart = clock;
+  poss.clockEnd = Math.max(0, clock - poss.consumed);
+  poss.assistBy = null;
+  animT = 0; evIdx = 0; handler = 0;
+  const off = teams[att].players;
+  ballPos = { x: off[0].x, y: off[0].y };
+  statusText = teams[att].abbr + ' u napadu';
+  startEvent();
+}
+
+function startEvent(){
+  const e = poss.ev[evIdx];
+  e._el = 0;
+  e._dur = EVDUR[e.t] || 0.5;
+  if(e.t === 'pass'){ e._from = {x:ballPos.x, y:ballPos.y}; }
+  else if(e.t === 'shot'){ e._from = {x:ballPos.x, y:ballPos.y}; }
+  else if(e.t === 'ft'){ e._shown = false; }
+  else if(e.t === 'rebound'){ e._from = {x: attackX(att), y: CY}; }
+  else if(e.t === 'turnover'){ e._from = {x:ballPos.x, y:ballPos.y}; e._dpi = Math.floor(rng()*5); }
+  else if(e.t === 'drive'){ const bx = attackX(att); e._tx = bx + (bx>W/2?-58:58); e._ty = CY + (rng()*40-20); }
+}
+
+function endEvent(){
+  const e = poss.ev[evIdx];
+  const off = teams[att].players;
+  if(e.t === 'pass'){ if(handler!==e.to){ poss.assistBy = handler; } handler = e.to; }
+  else if(e.t === 'shot'){ resolveShot(e); }
+  else if(e.t === 'ft'){ resolveFT(e); }
+  evIdx++;
+  if(evIdx < poss.ev.length){ startEvent(); }
+  else { finishPossession(); }
+}
+
+function resolveShot(e){
+  const off = teams[att], sh = off.players[e.who];
+  sh.fga++; if(e.three) sh.tpa++;
+  if(e.made){
+    const pts = e.three?3:2;
+    sh.fgm++; if(e.three) sh.tpm++; sh.pts += pts; off.score += pts;
+    if(poss.assistBy!=null && poss.assistBy!==e.who) off.players[poss.assistBy].ast++;
+    const bx = attackX(att);
+    popups.push({ x:bx + (bx>W/2?-40:40), y:CY-40, txt:(e.three?'3PT':'+2'), life:60, c:'#ffd24a' });
+    flash = 16;
+    addLog(clock, `${sh.name} ${e.three?'ZA TRICU 💥':'zabija'} (+${pts})`, att, e.three, score());
+    statusText = e.three ? 'TRICA!' : 'KOŠ!';
+  } else {
+    statusText = e.three ? 'PROMAŠAJ (3)' : 'PROMAŠAJ';
+  }
+}
+
+function resolveFT(e){
+  const off = teams[att], sh = off.players[poss.shooter];
+  sh.pts += e.makes; off.score += e.makes;
+  teams[att==='home'?'away':'home'].fouls++;
+  addLog(clock, `Faul — ${sh.name} ${e.makes}/${e.total} sl. bacanja`, att, false, score());
+}
+
+function finishPossession(){
+  const off = teams[att], p = poss;
+  // play-by-play za promašaj/skok/turnover
+  if(p.kind === 'to'){
+    addLog(clock, `${off.abbr} — izgubljena lopta${p.steal?' (ukradeno)':''}`, att, false, null);
+  } else if(!p.made && p.reb){
+    const rt = p.reb.off ? att : (att==='home'?'away':'home');
+    teams[rt].players[p.reb.who].reb++;
+    addLog(clock, `${off.players[p.shooter].name} promašuje — skok ${teams[rt].abbr}`, rt, false, null);
+  }
+  // potroši vrijeme
+  clock = p.clockEnd;
+
+  // kraj četvrtine?
+  if(clock <= 0.5){
+    if(quarter >= 4 && teams.home.score !== teams.away.score){
+      endGame(); return;
+    }
+    if(quarter >= 4 && teams.home.score === teams.away.score){
+      addLog(0, 'PRODUŽETAK!', '', true, score());
+      quarter++; clock = 300; teams.home.fouls = teams.away.fouls = 0;
+    } else {
+      addLog(0, `Kraj ${quarter}. četvrtine`, '', false, score());
+      quarter++; clock = (quarter<=4?720:300); teams.home.fouls = teams.away.fouls = 0;
+    }
+  }
+
+  // sljedeći posjed
+  let nextTeam;
+  if(p.kind==='to' || p.made) nextTeam = (att==='home'?'away':'home');
+  else if(p.reb && p.reb.off) nextTeam = att;
+  else nextTeam = (att==='home'?'away':'home');
+  att = nextTeam;
+  nextPossession(false);
+}
+
+function endGame(){
+  over = true; running = false;
+  const w = teams.home.score > teams.away.score ? teams.home : teams.away;
+  statusText = 'KRAJ';
+  addLog(0, `KRAJ — pobjeda ${w.abbr} ${score()}`, '', true, null);
+  document.getElementById('statusTxt').textContent = 'FINAL · ' + w.abbr;
+}
+
+function score(){ return teams.home.score + '-' + teams.away.score; }
+
+// ---------- Play-by-play ----------
+function addLog(clk, text, side, big, sc){
+  const log = document.getElementById('log');
+  const m = Math.floor(clk/60), s = Math.floor(clk%60);
+  const time = clk>0 ? `Q${quarter} ${m}:${String(s).padStart(2,'0')}` : (clk===0 && quarter?`Q${quarter}`:'');
+  const cls = side==='home'?'h':side==='away'?'a':'';
+  const div = document.createElement('div');
+  div.className = 'ev';
+  div.innerHTML = `<span class="tt">${time}</span> <span class="${cls} ${big?'big':''}">${text}</span>` +
+                  (sc?` <span class="sc">${sc}</span>`:'');
+  log.insertBefore(div, log.firstChild);
+  while(log.children.length > 60) log.removeChild(log.lastChild);
+}
+
+// ---------- Render: teren ----------
+function drawCourt(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#c98a44'); g.addColorStop(1,'#b0722f');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  // daske
+  ctx.strokeStyle='rgba(0,0,0,.05)';
+  for(let x=0;x<W;x+=26){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  ctx.strokeStyle='#f3efe4'; ctx.lineWidth=2.5;
+  ctx.strokeRect(20,20,W-40,H-40);
+  ctx.beginPath(); ctx.moveTo(W/2,20); ctx.lineTo(W/2,H-20); ctx.stroke();
+  ctx.beginPath(); ctx.arc(W/2,CY,58,0,7); ctx.stroke();
+  // logo sredine
+  ctx.fillStyle='rgba(243,239,228,.10)';
+  ctx.beginPath(); ctx.arc(W/2,CY,58,0,7); ctx.fill();
+  // reketi, lukovi i trice po objema stranama
+  drawHalf(LX, 1);
+  drawHalf(RX, -1);
+}
+function drawHalf(bx, dir){
+  ctx.strokeStyle='#f3efe4'; ctx.lineWidth=2.5;
+  // reket 16ft
+  const paintW = 150, paintH = 150;
+  const px = dir>0 ? bx : bx - paintW;
+  ctx.strokeRect(px, CY-paintH/2, paintW, paintH);
+  // krug slobodnih bacanja
+  ctx.beginPath(); ctx.arc(bx + dir*paintW, CY, 46, 0, 7); ctx.stroke();
+  // restricted area
+  ctx.beginPath(); ctx.arc(bx + dir*14, CY, 34, dir>0?-Math.PI/2:Math.PI/2, dir>0?Math.PI/2:3*Math.PI/2); ctx.stroke();
+  // linija za tricu (luk + ravni dijelovi uz osnovnu liniju)
+  const cxr = bx + dir*14, arcR = 205, sweep = 1.15;
+  ctx.beginPath();
+  ctx.arc(cxr, CY, arcR, dir>0?-sweep:Math.PI-sweep, dir>0?sweep:Math.PI+sweep);
+  ctx.stroke();
+  const exx = cxr + dir*Math.cos(sweep)*arcR;
+  const eyT = CY - Math.sin(sweep)*arcR, eyB = CY + Math.sin(sweep)*arcR;
+  const endLine = dir>0 ? 20 : W-20;
+  ctx.beginPath();
+  ctx.moveTo(exx, eyT); ctx.lineTo(endLine, eyT);
+  ctx.moveTo(exx, eyB); ctx.lineTo(endLine, eyB);
+  ctx.stroke();
+  // koš + tabla
+  ctx.strokeStyle='#e8eef5'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(bx+dir*2, CY-26); ctx.lineTo(bx+dir*2, CY+26); ctx.stroke();
+  ctx.fillStyle='#e0491f';
+  ctx.beginPath(); ctx.arc(bx + dir*14, CY, 8, 0, 7); ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+}
+
+function drawPlayer(p, col, col2, isHandler){
+  // sjena
+  ctx.fillStyle='rgba(0,0,0,.25)';
+  ctx.beginPath(); ctx.ellipse(p.x, p.y+13, 12, 5, 0, 0, 7); ctx.fill();
+  // dres
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(p.x, p.y, 12, 0, 7); ctx.fill();
+  ctx.strokeStyle = col2; ctx.lineWidth = 2.5; ctx.stroke();
+  // broj
+  ctx.fillStyle='#fff'; ctx.font='bold 10px Segoe UI, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(p.num, p.x, p.y);
+  if(isHandler){
+    ctx.strokeStyle='#ffe14a'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.arc(p.x, p.y, 16, 0, 7); ctx.stroke();
+  }
+}
+
+function render(){
+  drawCourt();
+  // igrači
+  const offP = teams[att].players, defP = teams[att==='home'?'away':'home'].players;
+  const offT = teams[att], defT = teams[att==='home'?'away':'home'];
+  defP.forEach(p=> drawPlayer(p, defT.c, defT.c2, false));
+  offP.forEach((p,i)=> drawPlayer(p, offT.c, offT.c2, i===handler && !ballFlying()));
+
+  // lopta
+  const by = ballPos.y - ballArc;
+  ctx.fillStyle='rgba(0,0,0,.2)';
+  ctx.beginPath(); ctx.ellipse(ballPos.x, ballPos.y+4, 6, 2.5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle='#e8863b';
+  ctx.beginPath(); ctx.arc(ballPos.x, by, 6.5, 0, 7); ctx.fill();
+  ctx.strokeStyle='#5a3212'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.arc(ballPos.x, by, 6.5, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ballPos.x-6.5, by); ctx.lineTo(ballPos.x+6.5, by); ctx.stroke();
+
+  // popupi
+  popups.forEach(pu=>{
+    ctx.globalAlpha = Math.min(1, pu.life/25);
+    ctx.fillStyle = pu.c; ctx.font='bold 22px Segoe UI, sans-serif'; ctx.textAlign='center';
+    ctx.fillText(pu.txt, pu.x, pu.y - (60-pu.life)*0.5);
+    ctx.globalAlpha = 1;
+  });
+
+  if(flash > 0){ ctx.fillStyle = `rgba(255,225,74,${flash/40})`; ctx.fillRect(0,0,W,H); }
+
+  // scoreboard UI
+  document.getElementById('hPts').textContent = teams.home.score;
+  document.getElementById('aPts').textContent = teams.away.score;
+  const dispClock = over ? 0 : Math.max(0, poss ? lerp(poss.clockStart, poss.clockEnd, poss.totalAnim? clampProg():0) : clock);
+  const m = Math.floor(dispClock/60), s = Math.floor(dispClock%60);
+  document.getElementById('clock').textContent = `${m}:${String(s).padStart(2,'0')}`;
+  document.getElementById('qtr').textContent = over ? 'FINAL' : (quarter<=4?('Q'+quarter):'OT');
+  // shot clock
+  const used = poss && poss.totalAnim ? clampProg()*poss.consumed : 0;
+  const sc = Math.max(0, Math.ceil(24 - used));
+  const scEl = document.getElementById('shot');
+  scEl.textContent = over ? '' : sc;
+  scEl.classList.toggle('low', sc<=5 && !over);
+  // bonus
+  document.getElementById('bonus').textContent =
+    (teams.home.fouls>=5?'◄ BONUS ':'') + (teams.away.fouls>=5?' BONUS ►':'');
+  document.getElementById('statusTxt').textContent = over ? document.getElementById('statusTxt').textContent : statusText;
+}
+
+function ballFlying(){ const e = poss && poss.ev[evIdx]; return e && (e.t==='pass'||e.t==='shot'||e.t==='rebound'||e.t==='turnover'); }
+function clampProg(){ return Math.max(0, Math.min(1, animT / poss.totalAnim)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+
+// ---------- Update (animacija) ----------
+let last = performance.now();
+function loop(now){
+  const dt = Math.min(0.05, (now-last)/1000); last = now;
+  if(running && !over && poss){
+    const step = dt * speed;
+    animT += step;
+    const e = poss.ev[evIdx];
+    e._el += step;
+    const k = Math.min(1, e._el / e._dur);
+
+    // kretanje igrača prema ciljevima
+    const offP = teams[att].players, defP = teams[att==='home'?'away':'home'].players;
+    const rate = Math.min(1, 0.06 * speed * 60 * dt);
+    [...offP,...defP].forEach(p=>{ p.x += (p.tx-p.x)*rate; p.y += (p.ty-p.y)*rate; });
+
+    // ball handler / drive
+    const off = offP;
+    const bx = attackX(att);
+
+    if(e.t === 'advance'){
+      // PG nosi loptu prema vrhu
+      ballPos.x = off[handler].x; ballPos.y = off[handler].y - 10; ballArc = 0;
+    } else if(e.t === 'pass'){
+      const rec = off[e.to];
+      ballPos.x = lerp(e._from.x, rec.x, k);
+      ballPos.y = lerp(e._from.y, rec.y, k);
+      ballArc = Math.sin(k*Math.PI) * 16;
+    } else if(e.t === 'drive'){
+      // driblanje prema košu (cilj određen jednom, u startEvent)
+      off[handler].tx = e._tx; off[handler].ty = e._ty;
+      ballPos.x = off[handler].x; ballPos.y = off[handler].y - 10; ballArc = 0;
+    } else if(e.t === 'shot'){
+      const rim = { x: bx + (bx>W/2?-14:14), y: CY };
+      ballPos.x = lerp(e._from.x, rim.x, k);
+      ballPos.y = lerp(e._from.y, rim.y, k);
+      ballArc = Math.sin(k*Math.PI) * 46;
+    } else if(e.t === 'ft'){
+      const rim = { x: bx + (bx>W/2?-14:14), y: CY };
+      const line = { x: bx + (bx>W/2?-150:150), y: CY };
+      ballPos.x = lerp(line.x, rim.x, k);
+      ballPos.y = lerp(line.y, rim.y, k);
+      ballArc = Math.sin(k*Math.PI) * 40;
+      if(!e._shown && k>0.5){ e._shown=true; }
+    } else if(e.t === 'rebound'){
+      const rt = e.off ? att : (att==='home'?'away':'home');
+      const rp = teams[rt].players[e.who];
+      ballPos.x = lerp(e._from.x, rp.x, k);
+      ballPos.y = lerp(e._from.y, rp.y, k);
+      ballArc = Math.sin(k*Math.PI) * 22;
+    } else if(e.t === 'turnover'){
+      const dp = defP[e._dpi] || defP[0];
+      ballPos.x = lerp(e._from.x, dp.x, k);
+      ballPos.y = lerp(e._from.y, dp.y, k);
+      ballArc = Math.sin(k*Math.PI) * 14;
+    }
+
+    if(k >= 1) endEvent();
+
+    // popupi / flash
+    popups.forEach(pu=> pu.life--);
+    popups = popups.filter(pu=> pu.life>0);
+    if(flash>0) flash--;
+  }
+  render();
+  requestAnimationFrame(loop);
+}
+
+// ---------- Kontrole ----------
+document.getElementById('play').onclick = ()=>{ if(over) startMatch((Math.random()*0xFFFFFFFF)>>>0); running = true; };
+document.getElementById('pause').onclick = ()=>{ running = false; };
+document.getElementById('newMatch').onclick = ()=>{ startMatch((Math.random()*0xFFFFFFFF)>>>0); running = true; };
+document.getElementById('replay').onclick = ()=>{ startMatch(SEED); running = true; };
+document.getElementById('loadSeed').onclick = ()=>{
+  const v = parseInt(document.getElementById('seedInput').value, 10);
+  if(!isNaN(v)){ startMatch(v>>>0); running = true; }
+};
+document.querySelectorAll('.spd button').forEach(b=> b.onclick = ()=>{
+  speed = +b.dataset.s;
+  document.querySelectorAll('.spd button').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+});
+
+statusText = 'TIP-OFF';
+startMatch((Math.random()*0xFFFFFFFF)>>>0);
+running = true;               // auto-play — odmah se vrti kad se otvori (za prikaz klijentu)
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
