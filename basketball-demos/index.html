@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Basketball — 2D simulacije (opcije)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:radial-gradient(circle at 50% -10%,#16202e,#070a10 70%);
+    font-family:"Segoe UI",system-ui,sans-serif; color:#e9eef5; padding:36px 20px; }
+  header { max-width:1040px; margin:0 auto 28px; }
+  h1 { font-size:26px; margin:0 0 6px; }
+  p.sub { margin:0; color:#8496ac; font-size:14px; }
+  .grid { max-width:1040px; margin:0 auto; display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:18px; }
+  .card { background:#0e141d; border:1px solid #1d2836; border-radius:14px; overflow:hidden; display:flex; flex-direction:column;
+    transition:transform .15s, border-color .15s; }
+  .card:hover { transform:translateY(-3px); border-color:#31465e; }
+  .thumb { aspect-ratio:16/10; background:#0a0f16 center/cover no-repeat; border-bottom:1px solid #1d2836; }
+  .body { padding:14px 16px 16px; display:flex; flex-direction:column; gap:8px; flex:1; }
+  .lvl { font-size:10px; letter-spacing:1.5px; text-transform:uppercase; font-weight:700; padding:3px 8px; border-radius:20px; align-self:flex-start; }
+  .lvl.s { background:#123522; color:#5fe0a0; } .lvl.m { background:#123049; color:#5fb0ff; } .lvl.c { background:#3a2450; color:#c48aff; }
+  .card h3 { margin:2px 0 0; font-size:17px; }
+  .card p { margin:0; font-size:13px; color:#8fa1b7; line-height:1.45; flex:1; }
+  .card a { margin-top:6px; text-align:center; background:#1f6feb; color:#fff; text-decoration:none; padding:9px; border-radius:8px;
+    font-size:14px; font-weight:600; transition:background .15s; }
+  .card a:hover { background:#3b82f6; }
+  footer { max-width:1040px; margin:26px auto 0; font-size:12px; color:#5f7086; line-height:1.6; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>🏀 Virtual Basketball — 2D simulacije</h1>
+    <p class="sub">Opcije vizualnog stila simulacije utakmice · od jednostavnijih do kompleksnijih · svaka je samostalna (offline)</p>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="thumb" style="background-image:url('preview-sim-minimal.png')"></div>
+      <div class="body">
+        <span class="lvl s">Jednostavno</span>
+        <h3>Minimal · in-play widget</h3>
+        <p>Čist, schematski prikaz. Lagan, brz, idealan kao in-play widget na kladionici ili za mobilni. Diskretni HUD, trag lopte.</p>
+        <a href="sim-minimal.html">Otvori simulaciju →</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="thumb" style="background-image:url('preview-sim-retro.png')"></div>
+      <div class="body">
+        <span class="lvl s">Jednostavno · alt</span>
+        <h3>Retro Arcade · CRT</h3>
+        <p>Pixel/neon estetika sa scanline efektom. Zabavan, prepoznatljiv brand — dobar za promo ili “arcade” liniju proizvoda.</p>
+        <a href="sim-retro.html">Otvori simulaciju →</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="thumb" style="background-image:url('preview.png')"></div>
+      <div class="body">
+        <span class="lvl m">Standard</span>
+        <h3>NBA Top-Down · standard</h3>
+        <p>Pogled odozgo s punim NBA pravilima (4×12, shot-clock, bonus), play-by-play i provably-fair seed (Replay iste utakmice).</p>
+        <a href="nba-match-sim.html">Otvori simulaciju →</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="thumb" style="background-image:url('preview-sim-broadcast.png')"></div>
+      <div class="body">
+        <span class="lvl c">Kompleksno</span>
+        <h3>Broadcast 2.5D · TV</h3>
+        <p>Perspektiva terena, publika, TV semafor, igrači s dresovima i brojevima, čestice slavlja i lower-third grafika strijelca.</p>
+        <a href="sim-broadcast.html">Otvori simulaciju →</a>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Napomena: ekipe su fiktivne (u NBA gradovima) i sigurne za produkciju; popis ekipa/boja se lako zamjenjuje.
+    Standardni (top-down) stil ima deterministički provably-fair engine — ista utakmica se reproducira iz seeda.
+  </footer>
+</body>
+</html>

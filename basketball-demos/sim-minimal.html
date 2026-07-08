@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sim — Minimal (widget)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; padding:20px; background:#0b0e13; font-family:"Segoe UI",system-ui,sans-serif; color:#e7edf5; }
+  .tag { font-size:12px; letter-spacing:2px; color:#5f7086; text-transform:uppercase; }
+  .card { width:820px; max-width:100%; background:#0f141c; border:1px solid #1b2532; border-radius:16px; overflow:hidden;
+    box-shadow:0 20px 50px rgba(0,0,0,.5); }
+  .hud { display:grid; grid-template-columns:1fr auto 1fr; align-items:center; padding:14px 22px; }
+  .side { display:flex; align-items:center; gap:10px; font-weight:700; }
+  .side.right { justify-content:flex-end; }
+  .chip { width:12px; height:12px; border-radius:4px; }
+  .abbr { font-size:15px; letter-spacing:1px; }
+  .sc { font-size:30px; font-variant-numeric:tabular-nums; font-weight:800; }
+  .mid { text-align:center; }
+  .mid .cl { font-size:16px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .mid .q { font-size:10px; letter-spacing:2px; color:#5f7086; }
+  canvas { display:block; width:100%; height:auto; background:#111823; }
+  .foot { display:flex; align-items:center; gap:8px; padding:10px 18px; border-top:1px solid #1b2532; font-size:12px; color:#7a8ba0; }
+  .foot .sp { margin-left:auto; display:flex; gap:5px; }
+  button { background:#182231; color:#cfe0f0; border:none; border-radius:7px; padding:5px 11px; font-size:12px; cursor:pointer; }
+  button.active, button:hover { background:#243448; }
+</style>
+</head>
+<body>
+  <div class="tag">Stil: Minimal · in-play widget</div>
+  <div class="card">
+    <div class="hud">
+      <div class="side"><span class="chip" id="ch"></span><span class="abbr" id="ha">—</span><span class="sc" id="hs">0</span></div>
+      <div class="mid"><div class="cl" id="cl">12:00</div><div class="q" id="q">Q1</div></div>
+      <div class="side right"><span class="sc" id="as">0</span><span class="abbr" id="aa">—</span><span class="chip" id="ca"></span></div>
+    </div>
+    <canvas id="cv" width="820" height="420"></canvas>
+    <div class="foot">
+      <span id="poss">—</span>
+      <span class="sp">
+        <button data-s="1">1×</button><button data-s="2" class="active">2×</button><button data-s="4">4×</button>
+        <button id="nw">Nova</button>
+      </span>
+    </div>
+  </div>
+
+<script>
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const W=cv.width,H=cv.height,CY=H/2,LX=44,RX=W-44;
+const TEAMS=[['LAS','#8c5cc8'],['BOS','#12a35a'],['MIA','#e0264f'],['DEN','#2f5fb0'],
+  ['PHX','#6b52d8'],['NYC','#f58426'],['OKC','#2f9fd8'],['SAC','#7a4db0']];
+let teams,att,ball,handler,clock,quarter,speed=2,over;
+let actions,actIdx,actT,trail=[];
+
+function rint(n){return Math.floor(Math.random()*n);}
+function newMatch(){
+  const pool=TEAMS.slice(); const a=pool.splice(rint(pool.length),1)[0], b=pool.splice(rint(pool.length),1)[0];
+  teams={home:mk(a),away:mk(b)}; quarter=1; clock=720; over=false; att=Math.random()<.5?'home':'away';
+  document.getElementById('ha').textContent=a[0]; document.getElementById('aa').textContent=b[0];
+  document.getElementById('ch').style.background=a[1]; document.getElementById('ca').style.background=b[1];
+  layout(true); ball={x:W/2,y:CY}; trail=[]; newPoss();
+}
+function mk(t){ const p=[]; for(let i=0;i<5;i++)p.push({x:0,y:0,tx:0,ty:0}); return {abbr:t[0],c:t[1],score:0,players:p}; }
+function bx(k){ const hr=quarter<=2; return k==='home'?(hr?RX:LX):(hr?LX:RX); }
+function spots(b){ const dir=b>W/2?1:-1; return [[230,0],[175,-115],[175,115],[70,-140],[85,130]].map(([dx,dy])=>({x:b-dir*dx,y:CY+dy})); }
+function layout(instant){
+  const ob=bx(att), db=bx(att==='home'?'away':'home'), s=spots(ob);
+  teams[att].players.forEach((p,i)=>{p.tx=s[i].x;p.ty=s[i].y;});
+  teams[att==='home'?'away':'home'].players.forEach((p,i)=>{p.tx=s[i].x+(ob-s[i].x)*.26;p.ty=s[i].y+(CY-s[i].y)*.16;});
+  if(instant)['home','away'].forEach(k=>teams[k].players.forEach(p=>{p.x=p.tx;p.y=p.ty;}));
+}
+function newPoss(){
+  layout(false); handler=0;
+  actions=[{t:'adv',d:1.0}];
+  const np=1+rint(3); let cur=0;
+  for(let i=0;i<np;i++){ let to=rint(5); while(to===cur)to=rint(5); actions.push({t:'pass',to,d:.5}); cur=to; }
+  const three=Math.random()<.4, made=Math.random()<(three?.37:.52);
+  actions.push({t:'shoot',who:cur,three,made,d:.75});
+  actions.push({t:'end',made,three,who:cur,d:.5});
+  actIdx=0; actT=0;
+  const off=teams[att].players; ball={x:off[0].x,y:off[0].y};
+  document.getElementById('poss').textContent=teams[att].abbr+' u napadu';
+}
+function stepAct(){
+  actIdx++;
+  if(actIdx>=actions.length){ // switch
+    att=att==='home'?'away':'home'; newPoss(); return;
+  }
+  actT=0;
+  const a=actions[actIdx];
+  if(a.t==='pass') a.from={x:ball.x,y:ball.y};
+  if(a.t==='shoot') a.from={x:ball.x,y:ball.y};
+}
+function resolve(a){
+  if(a.made){ const pts=a.three?3:2; teams[att].score+=pts; }
+}
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000); last=now;
+  if(!over){
+    clock-=dt*4.5*speed;
+    if(clock<=0){ clock=720; if(quarter>=4){over=true;} else quarter++; }
+    const a=actions[actIdx]; actT+=dt*speed;
+    const off=teams[att].players, def=teams[att==='home'?'away':'home'].players, b=bx(att);
+    const rate=Math.min(1,.07*speed*60*dt);
+    [...off,...def].forEach(p=>{p.x+=(p.tx-p.x)*rate;p.y+=(p.ty-p.y)*rate;});
+    const k=Math.min(1,actT/a.d);
+    if(a.t==='adv'){ ball.x=off[handler].x; ball.y=off[handler].y; }
+    else if(a.t==='pass'){ const r=off[a.to]; ball.x=lerp(a.from.x,r.x,k); ball.y=lerp(a.from.y,r.y,k)-Math.sin(k*Math.PI)*14; if(k>=1)handler=a.to; }
+    else if(a.t==='shoot'){ const rim={x:b+(b>W/2?-12:12),y:CY}; ball.x=lerp(a.from.x,rim.x,k); ball.y=lerp(a.from.y,rim.y,k)-Math.sin(k*Math.PI)*40; }
+    else if(a.t==='end'){ ball.x=bx(att)+(bx(att)>W/2?-12:12); ball.y=CY; }
+    trail.push({x:ball.x,y:ball.y}); if(trail.length>8)trail.shift();
+    if(k>=1){ if(a.t==='shoot')resolve(a); stepAct(); }
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+function lerp(a,b,t){return a+(b-a)*t;}
+
+function draw(){
+  ctx.fillStyle='#111823'; ctx.fillRect(0,0,W,H);
+  // court minimal
+  ctx.strokeStyle='rgba(255,255,255,.13)'; ctx.lineWidth=1.5;
+  roundRect(24,24,W-48,H-48,14); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W/2,24); ctx.lineTo(W/2,H-24); ctx.stroke();
+  ctx.beginPath(); ctx.arc(W/2,CY,46,0,7); ctx.stroke();
+  [[LX,1],[RX,-1]].forEach(([b,dir])=>{
+    ctx.beginPath(); ctx.arc(b+dir*10,CY,150,dir>0?-1.1:Math.PI-1.1,dir>0?1.1:Math.PI+1.1); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.beginPath(); ctx.arc(b+dir*10,CY,7,0,7); ctx.stroke();
+    ctx.strokeStyle='rgba(255,255,255,.13)';
+  });
+  // players
+  const off=teams[att].players, def=teams[att==='home'?'away':'home'].players;
+  const offT=teams[att], defT=teams[att==='home'?'away':'home'];
+  def.forEach(p=>disc(p,defT.c,false));
+  off.forEach((p,i)=>disc(p,offT.c,i===handler));
+  // trail + ball
+  for(let i=0;i<trail.length;i++){ ctx.fillStyle=`rgba(240,150,70,${(i+1)/trail.length*.4})`; ctx.beginPath(); ctx.arc(trail[i].x,trail[i].y,1.4+i*.3,0,7); ctx.fill(); }
+  ctx.fillStyle='#f0964a'; ctx.beginPath(); ctx.arc(ball.x,ball.y,4.5,0,7); ctx.fill();
+  // HUD sync
+  document.getElementById('hs').textContent=teams.home.score;
+  document.getElementById('as').textContent=teams.away.score;
+  const m=Math.floor(Math.max(0,clock)/60),s=Math.floor(Math.max(0,clock)%60);
+  document.getElementById('cl').textContent=`${m}:${String(s).padStart(2,'0')}`;
+  document.getElementById('q').textContent=over?'KRAJ':'Q'+quarter;
+}
+function disc(p,c,hl){
+  ctx.fillStyle='rgba(0,0,0,.3)'; ctx.beginPath(); ctx.ellipse(p.x,p.y+10,9,3.5,0,0,7); ctx.fill();
+  ctx.fillStyle=c; ctx.beginPath(); ctx.arc(p.x,p.y,9,0,7); ctx.fill();
+  if(hl){ ctx.strokeStyle='#ffe14a'; ctx.lineWidth=2.5; ctx.beginPath(); ctx.arc(p.x,p.y,13,0,7); ctx.stroke(); }
+}
+function roundRect(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+
+document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{speed=+b.dataset.s;document.querySelectorAll('[data-s]').forEach(x=>x.classList.remove('active'));b.classList.add('active');});
+document.getElementById('nw').onclick=newMatch;
+newMatch();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

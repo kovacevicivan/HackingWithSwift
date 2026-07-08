@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sim — Retro Arcade</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; padding:20px; background:#05060a; font-family:"Courier New",ui-monospace,monospace; color:#c8ffd0; }
+  .tag { font-size:12px; letter-spacing:3px; color:#4a7a55; text-transform:uppercase; }
+  .cab { width:760px; max-width:100%; background:#0a0f0c; border:3px solid #1b3a24; border-radius:10px; padding:12px;
+    box-shadow:0 0 0 3px #05060a, 0 20px 50px rgba(0,0,0,.6), inset 0 0 40px rgba(0,255,90,.04); }
+  .board { display:flex; align-items:center; justify-content:space-between; padding:6px 10px 12px; }
+  .tm { font-size:20px; font-weight:700; letter-spacing:2px; text-shadow:0 0 8px currentColor; }
+  .num { font-size:34px; font-weight:900; letter-spacing:1px; text-shadow:0 0 10px currentColor; font-variant-numeric:tabular-nums; }
+  .clockbox { text-align:center; color:#ffe14a; }
+  .clockbox .c { font-size:22px; font-weight:900; letter-spacing:2px; text-shadow:0 0 10px #ffe14a; }
+  .clockbox .q { font-size:11px; letter-spacing:3px; color:#8a7a2a; }
+  .screen { position:relative; border-radius:6px; overflow:hidden; border:2px solid #12241a; }
+  canvas { display:block; width:100%; height:auto; image-rendering:pixelated; }
+  .scan { position:absolute; inset:0; pointer-events:none;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0 1px, transparent 1px 3px);
+    box-shadow:inset 0 0 90px rgba(0,0,0,.7); }
+  .foot { display:flex; gap:8px; padding:10px 6px 2px; font-size:12px; align-items:center; }
+  .foot .sp { margin-left:auto; display:flex; gap:6px; }
+  button { background:#12241a; color:#8effa0; border:2px solid #1f4a2e; border-radius:5px; padding:4px 10px;
+    font-family:inherit; font-size:12px; letter-spacing:1px; cursor:pointer; text-transform:uppercase; }
+  button.active, button:hover { background:#1f4a2e; color:#c8ffd0; }
+  .ticker { color:#ff9a6a; font-size:12px; letter-spacing:1px; text-shadow:0 0 6px rgba(255,120,60,.4); }
+</style>
+</head>
+<body>
+  <div class="tag">Stil: Retro Arcade · CRT</div>
+  <div class="cab">
+    <div class="board">
+      <div><div class="tm" id="ha" style="color:#39d0ff">HOME</div><div class="num" id="hs" style="color:#39d0ff">00</div></div>
+      <div class="clockbox"><div class="c" id="cl">12:00</div><div class="q" id="q">1ST</div></div>
+      <div style="text-align:right"><div class="tm" id="aa" style="color:#ff5a7a">AWAY</div><div class="num" id="as" style="color:#ff5a7a">00</div></div>
+    </div>
+    <div class="screen">
+      <canvas id="cv" width="320" height="176"></canvas>
+      <div class="scan"></div>
+    </div>
+    <div class="foot">
+      <span class="ticker" id="tk">TIP-OFF!</span>
+      <span class="sp">
+        <button data-s="1">1X</button><button data-s="2" class="active">2X</button><button data-s="4">4X</button>
+        <button id="nw">NEW</button>
+      </span>
+    </div>
+  </div>
+
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const W=cv.width,H=cv.height,CY=H/2,LX=16,RX=W-16;
+const TEAMS=[['NYC','#39d0ff'],['LAS','#c46bff'],['MIA','#ff5a7a'],['DEN','#ffb648'],
+  ['PHX','#ff7a3a'],['OKC','#4affd0'],['CHI','#ff4a4a'],['SAC','#a06bff']];
+let teams,att,ball,handler,clock,quarter,speed=2,over,actions,actIdx,actT;
+
+function rint(n){return Math.floor(Math.random()*n);}
+function newMatch(){
+  const pool=TEAMS.slice(); const a=pool.splice(rint(pool.length),1)[0], b=pool.splice(rint(pool.length),1)[0];
+  teams={home:mk(a),away:mk(b)}; quarter=1; clock=720; over=false; att=Math.random()<.5?'home':'away';
+  const H1=document.getElementById('ha'),A1=document.getElementById('aa'),HS=document.getElementById('hs'),AS=document.getElementById('as');
+  H1.textContent=a[0]; H1.style.color=a[1]; HS.style.color=a[1];
+  A1.textContent=b[0]; A1.style.color=b[1]; AS.style.color=b[1];
+  layout(true); ball={x:W/2,y:CY}; newPoss();
+}
+function mk(t){const p=[];for(let i=0;i<5;i++)p.push({x:0,y:0,tx:0,ty:0});return{abbr:t[0],c:t[1],score:0,players:p};}
+function bx(k){const hr=quarter<=2;return k==='home'?(hr?RX:LX):(hr?LX:RX);}
+function spots(b){const dir=b>W/2?1:-1;return[[92,0],[68,-42],[68,42],[28,-52],[34,48]].map(([dx,dy])=>({x:b-dir*dx,y:CY+dy}));}
+function layout(i){const ob=bx(att),s=spots(ob);
+  teams[att].players.forEach((p,j)=>{p.tx=s[j].x;p.ty=s[j].y;});
+  teams[att==='home'?'away':'home'].players.forEach((p,j)=>{p.tx=s[j].x+(ob-s[j].x)*.28;p.ty=s[j].y+(CY-s[j].y)*.16;});
+  if(i)['home','away'].forEach(k=>teams[k].players.forEach(p=>{p.x=p.tx;p.y=p.ty;}));}
+function newPoss(){
+  layout(false);handler=0;actions=[{t:'adv',d:1.0}];
+  const np=1+rint(3);let cur=0;
+  for(let i=0;i<np;i++){let to=rint(5);while(to===cur)to=rint(5);actions.push({t:'pass',to,d:.5});cur=to;}
+  const three=Math.random()<.4,made=Math.random()<(three?.37:.52);
+  actions.push({t:'shoot',who:cur,three,made,d:.7});
+  actions.push({t:'end',made,three,d:.5});
+  actIdx=0;actT=0;const off=teams[att].players;ball={x:off[0].x,y:off[0].y};
+  tick(teams[att].abbr+' BALL');
+}
+function tick(s){document.getElementById('tk').textContent=s;}
+function stepAct(){actIdx++;if(actIdx>=actions.length){att=att==='home'?'away':'home';newPoss();return;}
+  actT=0;const a=actions[actIdx];if(a.t==='pass'||a.t==='shoot')a.from={x:ball.x,y:ball.y};}
+function resolve(a){if(a.made){const pts=a.three?3:2;teams[att].score+=pts;flash=8;tick((a.three?'3 POINTS! ':'BUCKET! ')+teams[att].abbr+' '+pts);}else tick('MISS');}
+let flash=0,last=performance.now();
+function loop(now){const dt=Math.min(.05,(now-last)/1000);last=now;
+  if(!over){
+    clock-=dt*4.5*speed;
+    if(clock<=0){clock=720;if(quarter>=4)over=true;else quarter++;}
+    const a=actions[actIdx];actT+=dt*speed;
+    const off=teams[att].players,def=teams[att==='home'?'away':'home'].players,b=bx(att);
+    const rate=Math.min(1,.08*speed*60*dt);
+    [...off,...def].forEach(p=>{p.x+=(p.tx-p.x)*rate;p.y+=(p.ty-p.y)*rate;});
+    const k=Math.min(1,actT/a.d);
+    if(a.t==='adv'){ball.x=off[handler].x;ball.y=off[handler].y;}
+    else if(a.t==='pass'){const r=off[a.to];ball.x=lerp(a.from.x,r.x,k);ball.y=lerp(a.from.y,r.y,k)-Math.sin(k*Math.PI)*8;if(k>=1)handler=a.to;}
+    else if(a.t==='shoot'){const rim={x:b+(b>W/2?-8:8),y:CY};ball.x=lerp(a.from.x,rim.x,k);ball.y=lerp(a.from.y,rim.y,k)-Math.sin(k*Math.PI)*22;}
+    else{ball.x=bx(att)+(bx(att)>W/2?-8:8);ball.y=CY;}
+    if(flash>0)flash--;
+    if(k>=1){if(a.t==='shoot')resolve(a);stepAct();}
+  }
+  draw();requestAnimationFrame(loop);
+}
+function lerp(a,b,t){return a+(b-a)*t;}
+function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),w,h);}
+function draw(){
+  ctx.fillStyle='#0a1f14';ctx.fillRect(0,0,W,H);
+  // pixel court
+  ctx.strokeStyle='#1f6b3a';ctx.lineWidth=2;ctx.strokeRect(6,6,W-12,H-12);
+  ctx.beginPath();ctx.moveTo(W/2,6);ctx.lineTo(W/2,H-6);ctx.stroke();
+  ctx.beginPath();ctx.arc(W/2,CY,20,0,7);ctx.stroke();
+  [[LX,1],[RX,-1]].forEach(([b,dir])=>{
+    ctx.beginPath();ctx.arc(b+dir*6,CY,58,dir>0?-1.05:Math.PI-1.05,dir>0?1.05:Math.PI+1.05);ctx.stroke();
+    px(b+dir*3-2,CY-3,5,6,'#ff8a3a'); // hoop block
+  });
+  if(flash>0){ctx.fillStyle='rgba(255,255,120,'+(flash/16)+')';ctx.fillRect(0,0,W,H);}
+  // players kao blokovi
+  const off=teams[att].players,def=teams[att==='home'?'away':'home'].players;
+  const offT=teams[att],defT=teams[att==='home'?'away':'home'];
+  def.forEach(p=>{px(p.x-4,p.y-4,8,8,defT.c);px(p.x-4,p.y-4,8,2,'rgba(255,255,255,.35)');});
+  off.forEach((p,i)=>{px(p.x-4,p.y-4,8,8,offT.c);px(p.x-4,p.y-4,8,2,'rgba(255,255,255,.5)');
+    if(i===handler){ctx.strokeStyle='#ffe14a';ctx.lineWidth=1;ctx.strokeRect(Math.round(p.x)-6,Math.round(p.y)-6,12,12);}});
+  // ball blok
+  px(ball.x-2,ball.y-2,4,4,'#ffdf3a');
+  // HUD
+  document.getElementById('hs').textContent=String(teams.home.score).padStart(2,'0');
+  document.getElementById('as').textContent=String(teams.away.score).padStart(2,'0');
+  const m=Math.floor(Math.max(0,clock)/60),s=Math.floor(Math.max(0,clock)%60);
+  document.getElementById('cl').textContent=`${m}:${String(s).padStart(2,'0')}`;
+  const Q=['1ST','2ND','3RD','4TH'];document.getElementById('q').textContent=over?'FINAL':Q[quarter-1]||'OT';
+}
+document.querySelectorAll('[data-s]').forEach(b=>b.onclick=()=>{speed=+b.dataset.s;document.querySelectorAll('[data-s]').forEach(x=>x.classList.remove('active'));b.classList.add('active');});
+document.getElementById('nw').onclick=newMatch;
+newMatch();requestAnimationFrame(loop);
+</script>
+</body>
+</html>

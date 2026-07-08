@@ -155,24 +155,25 @@ const CY = H/2;
 const LX = 62, RX = W - 62;          // pozicije koševa (lijevi / desni)
 const ARC3 = 232;                     // radijus linije za tricu (px)
 
-// ---- NBA ekipe (za demo; za produkciju zamijeniti licenciranim/fiktivnim) ----
+// ---- Fiktivne ekipe u NBA gradovima (sigurno za produkciju, bez licence) ----
+//      Zamijeni ovaj popis stvarnim/licenciranim ligama po potrebi.
 const TEAMS = [
-  {abbr:'LAL',city:'Los Angeles',name:'Lakers',c:'#8c5cc8',c2:'#FDB927'},
-  {abbr:'BOS',city:'Boston',name:'Celtics',c:'#12a35a',c2:'#BA9653'},
-  {abbr:'GSW',city:'Golden State',name:'Warriors',c:'#3a6fd8',c2:'#FFC72C'},
-  {abbr:'MIA',city:'Miami',name:'Heat',c:'#e0264f',c2:'#F9A01B'},
-  {abbr:'MIL',city:'Milwaukee',name:'Bucks',c:'#1f7a45',c2:'#EEE1C6'},
-  {abbr:'DEN',city:'Denver',name:'Nuggets',c:'#2f5fb0',c2:'#FEC524'},
-  {abbr:'PHX',city:'Phoenix',name:'Suns',c:'#6b52d8',c2:'#E56020'},
-  {abbr:'DAL',city:'Dallas',name:'Mavericks',c:'#3a8fd8',c2:'#B8C4CA'},
-  {abbr:'PHI',city:'Philadelphia',name:'76ers',c:'#3a86d8',c2:'#ED174C'},
-  {abbr:'NYK',city:'New York',name:'Knicks',c:'#f58426',c2:'#006BB6'},
-  {abbr:'CHI',city:'Chicago',name:'Bulls',c:'#e0344f',c2:'#111'},
-  {abbr:'CLE',city:'Cleveland',name:'Cavaliers',c:'#a01450',c2:'#FDBB30'},
-  {abbr:'OKC',city:'Oklahoma City',name:'Thunder',c:'#2f9fd8',c2:'#EF3B24'},
-  {abbr:'MEM',city:'Memphis',name:'Grizzlies',c:'#6d86c9',c2:'#4a5aa8'},
-  {abbr:'SAC',city:'Sacramento',name:'Kings',c:'#7a4db0',c2:'#63727A'},
-  {abbr:'ATL',city:'Atlanta',name:'Hawks',c:'#e04a4e',c2:'#26282A'},
+  {abbr:'LAS',city:'Los Angeles',name:'Stars',c:'#8c5cc8',c2:'#FDB927'},
+  {abbr:'BOS',city:'Boston',name:'Shamrocks',c:'#12a35a',c2:'#BA9653'},
+  {abbr:'GSC',city:'Golden State',name:'Waves',c:'#3a6fd8',c2:'#FFC72C'},
+  {abbr:'MIA',city:'Miami',name:'Tide',c:'#e0264f',c2:'#F9A01B'},
+  {abbr:'MIL',city:'Milwaukee',name:'Stags',c:'#1f7a45',c2:'#EEE1C6'},
+  {abbr:'DEN',city:'Denver',name:'Peaks',c:'#2f5fb0',c2:'#FEC524'},
+  {abbr:'PHX',city:'Phoenix',name:'Blaze',c:'#6b52d8',c2:'#E56020'},
+  {abbr:'DAL',city:'Dallas',name:'Rangers',c:'#3a8fd8',c2:'#B8C4CA'},
+  {abbr:'PHI',city:'Philadelphia',name:'Liberty',c:'#3a86d8',c2:'#ED174C'},
+  {abbr:'NYC',city:'New York',name:'Empire',c:'#f58426',c2:'#006BB6'},
+  {abbr:'CHI',city:'Chicago',name:'Wind',c:'#e0344f',c2:'#111111'},
+  {abbr:'CLE',city:'Cleveland',name:'Iron',c:'#a01450',c2:'#FDBB30'},
+  {abbr:'OKC',city:'Oklahoma City',name:'Storm',c:'#2f9fd8',c2:'#EF3B24'},
+  {abbr:'MEM',city:'Memphis',name:'Blues',c:'#6d86c9',c2:'#4a5aa8'},
+  {abbr:'SAC',city:'Sacramento',name:'Royals',c:'#7a4db0',c2:'#63727A'},
+  {abbr:'ATL',city:'Atlanta',name:'Talons',c:'#e04a4e',c2:'#26282A'},
 ];
 const POS = ['PG','SG','SF','PF','C'];
 const LAST = ['Carter','Brooks','Reed','Bell','Foster','Hayes','Turner','Grant','Wells',
@@ -185,6 +186,7 @@ function pickDistinct(arr, n){ const p=arr.slice(); const out=[]; for(let i=0;i<
 // ---- Stanje ----
 let teams, players, ball, quarter, clock, over, running=false, speed=2;
 let att, poss, animT, evIdx, handler, ballPos, ballArc, popups, flash, statusText;
+let ballTrail = [], bench = [], flashTeam = null, nextFastBreak = false;
 
 function makeTeam(t){
   const names = pickDistinct(LAST,5);
@@ -197,6 +199,22 @@ function makeTeam(t){
   return {...t, score:0, fouls:0, players:pl};
 }
 
+// klupe uz teren (reagiraju na koš)
+function buildBench(){
+  bench = [];
+  for(let i=0;i<5;i++) bench.push({ team:'home', x: W*0.30 + i*22, y: H-11 });
+  for(let i=0;i<5;i++) bench.push({ team:'away', x: W*0.58 + i*22, y: H-11 });
+}
+function drawBench(){
+  bench.forEach(b=>{
+    const hop = (flash>0 && flashTeam===b.team) ? Math.max(0, Math.sin(flash*0.5))*5 : 0;
+    const t = teams[b.team];
+    ctx.fillStyle = t.c;
+    ctx.beginPath(); ctx.arc(b.x, b.y - hop, 4.5, 0, 7); ctx.fill();
+    ctx.strokeStyle = t.c2; ctx.lineWidth = 1; ctx.stroke();
+  });
+}
+
 function startMatch(seed){
   SEED = seed >>> 0;
   rng = mulberry32(SEED);
@@ -204,7 +222,8 @@ function startMatch(seed){
   teams = { home: makeTeam(ta), away: makeTeam(tb) };
   quarter = 1; clock = 720; over = false;
   att = rng() < 0.5 ? 'home' : 'away';
-  popups = []; flash = 0;
+  popups = []; flash = 0; flashTeam = null; ballTrail = []; nextFastBreak = false;
+  buildBench();
 
   // vizualne početne pozicije
   layoutForNewPossession(true);
@@ -310,21 +329,22 @@ const EVDUR = { advance:1.0, pass:0.5, drive:0.75, shot:0.8, ft:0.9, rebound:0.6
 function nextPossession(first){
   layoutForNewPossession(false);
   poss = genPossession();
-  poss.totalAnim = poss.ev.reduce((s,e)=> s + (EVDUR[e.t]||0.5), 0);
+  poss.fast = nextFastBreak; nextFastBreak = false;
+  poss.totalAnim = poss.ev.reduce((s,e)=> s + ((e.t==='advance'&&poss.fast)?0.55:(EVDUR[e.t]||0.5)), 0);
   poss.clockStart = clock;
   poss.clockEnd = Math.max(0, clock - poss.consumed);
   poss.assistBy = null;
   animT = 0; evIdx = 0; handler = 0;
   const off = teams[att].players;
   ballPos = { x: off[0].x, y: off[0].y };
-  statusText = teams[att].abbr + ' u napadu';
+  statusText = poss.fast ? (teams[att].abbr + ' — BRZI NAPAD ⚡') : (teams[att].abbr + ' u napadu');
   startEvent();
 }
 
 function startEvent(){
   const e = poss.ev[evIdx];
   e._el = 0;
-  e._dur = EVDUR[e.t] || 0.5;
+  e._dur = (e.t==='advance' && poss.fast) ? 0.55 : (EVDUR[e.t] || 0.5);
   if(e.t === 'pass'){ e._from = {x:ballPos.x, y:ballPos.y}; }
   else if(e.t === 'shot'){ e._from = {x:ballPos.x, y:ballPos.y}; }
   else if(e.t === 'ft'){ e._shown = false; }
@@ -353,7 +373,7 @@ function resolveShot(e){
     if(poss.assistBy!=null && poss.assistBy!==e.who) off.players[poss.assistBy].ast++;
     const bx = attackX(att);
     popups.push({ x:bx + (bx>W/2?-40:40), y:CY-40, txt:(e.three?'3PT':'+2'), life:60, c:'#ffd24a' });
-    flash = 16;
+    flash = 16; flashTeam = att;
     addLog(clock, `${sh.name} ${e.three?'ZA TRICU 💥':'zabija'} (+${pts})`, att, e.three, score());
     statusText = e.three ? 'TRICA!' : 'KOŠ!';
   } else {
@@ -400,6 +420,7 @@ function finishPossession(){
   if(p.kind==='to' || p.made) nextTeam = (att==='home'?'away':'home');
   else if(p.reb && p.reb.off) nextTeam = att;
   else nextTeam = (att==='home'?'away':'home');
+  nextFastBreak = (p.kind === 'to' && p.steal);   // ukradena lopta => brzi napad
   att = nextTeam;
   nextPossession(false);
 }
@@ -475,6 +496,9 @@ function drawHalf(bx, dir){
   ctx.fillStyle='#e0491f';
   ctx.beginPath(); ctx.arc(bx + dir*14, CY, 8, 0, 7); ctx.fill();
   ctx.strokeStyle='#fff'; ctx.lineWidth=1.5; ctx.stroke();
+  // naznaka mreže
+  ctx.strokeStyle='rgba(255,255,255,.30)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(bx + dir*14, CY, 12, 0, 7); ctx.stroke();
 }
 
 function drawPlayer(p, col, col2, isHandler){
@@ -497,11 +521,19 @@ function drawPlayer(p, col, col2, isHandler){
 
 function render(){
   drawCourt();
+  drawBench();
   // igrači
   const offP = teams[att].players, defP = teams[att==='home'?'away':'home'].players;
   const offT = teams[att], defT = teams[att==='home'?'away':'home'];
   defP.forEach(p=> drawPlayer(p, defT.c, defT.c2, false));
   offP.forEach((p,i)=> drawPlayer(p, offT.c, offT.c2, i===handler && !ballFlying()));
+
+  // trag lopte
+  for(let i=0;i<ballTrail.length;i++){
+    const tr = ballTrail[i], a = (i+1)/ballTrail.length*0.45;
+    ctx.fillStyle = `rgba(232,134,59,${a})`;
+    ctx.beginPath(); ctx.arc(tr.x, tr.y, 1.5 + i*0.4, 0, 7); ctx.fill();
+  }
 
   // lopta
   const by = ballPos.y - ballArc;
@@ -521,7 +553,14 @@ function render(){
     ctx.globalAlpha = 1;
   });
 
-  if(flash > 0){ ctx.fillStyle = `rgba(255,225,74,${flash/40})`; ctx.fillRect(0,0,W,H); }
+  if(flash > 0){
+    ctx.fillStyle = `rgba(255,225,74,${flash/40})`; ctx.fillRect(0,0,W,H);
+    if(flashTeam){                          // swish prsten na košu
+      const rx = attackX(flashTeam);
+      ctx.strokeStyle = `rgba(255,225,74,${flash/22})`; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(rx + (rx>W/2?-14:14), CY, (18-flash)*2.4 + 10, 0, 7); ctx.stroke();
+    }
+  }
 
   // scoreboard UI
   document.getElementById('hPts').textContent = teams.home.score;
@@ -559,7 +598,8 @@ function loop(now){
 
     // kretanje igrača prema ciljevima
     const offP = teams[att].players, defP = teams[att==='home'?'away':'home'].players;
-    const rate = Math.min(1, 0.06 * speed * 60 * dt);
+    let rate = Math.min(1, 0.06 * speed * 60 * dt);
+    if(poss.fast && e.t==='advance') rate = Math.min(1, rate*1.8);   // brži fast-break
     [...offP,...defP].forEach(p=>{ p.x += (p.tx-p.x)*rate; p.y += (p.ty-p.y)*rate; });
 
     // ball handler / drive
@@ -602,6 +642,10 @@ function loop(now){
       ballPos.y = lerp(e._from.y, dp.y, k);
       ballArc = Math.sin(k*Math.PI) * 14;
     }
+
+    // trag lopte
+    ballTrail.push({ x: ballPos.x, y: ballPos.y - ballArc });
+    if(ballTrail.length > 9) ballTrail.shift();
 
     if(k >= 1) endEvent();
 
